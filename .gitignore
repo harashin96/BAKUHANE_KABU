@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+logs/
+site/
+data/prices.parquet
+data/prices.csv.gz
+data/yf_cache/
+data/failed_tickers.csv
+data/edinet/fundamentals.csv
+data/edinet/index.csv
+data/edinet/index_done.txt
+reports/ranking_*
+reports/latest.html
+config/my_positions.csv
+config/edinet_key.txt

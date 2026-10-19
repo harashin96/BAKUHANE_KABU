@@ -1,0 +1,104 @@
+name: 爆ハネランキング
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"     # 平日 18:30(日本時間)ごろ。GitHub側の混雑で数十分遅れることがあります
+  workflow_dispatch:           # 「Run workflow」ボタンで手動実行
+    inputs:
+      retrain:
+        description: "予測モデルを学習し直す"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ranking
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TZ: Asia/Tokyo
+      PYTHONUTF8: "1"
+      JP_DATA_START: "2015-01-01"
+      JP_PUBLISH_DIR: ""
+      EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: パッケージをインストール
+        run: pip install -r requirements.txt
+
+      - name: 株価データを復元(前回の実行分)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/prices.parquet
+          key: prices-${{ github.run_id }}
+          restore-keys: prices-
+
+      - name: 予測モデルを学習し直すか判定
+        id: train
+        run: |
+          if [ ! -f models/jump_model.pkl ] || [ "${{ github.event.inputs.retrain }}" = "true" ] || [ "$(date +%d)" -le "07" -a "$(date +%u)" = "1" ]; then
+            echo "do=1" >> "$GITHUB_OUTPUT"; echo "学習し直します"
+          else
+            echo "do=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 銘柄一覧・株価(全期間)・株式分割を更新して学習
+        if: steps.train.outputs.do == '1'
+        run: |
+          python scripts/01_fetch_universe.py || echo "銘柄一覧の更新に失敗(前回のものを使います)"
+          python scripts/02_fetch_prices.py
+          python scripts/05_fetch_splits.py || echo "分割履歴の更新に失敗(前回のものを使います)"
+          python scripts/20_train_jump_model.py
+
+      - name: 株価・EDINETを更新してランキングを作成
+        run: python scripts/21_daily_report.py --no-open
+
+      - name: 株価データを保存(次回用)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/prices.parquet
+          key: prices-${{ github.run_id }}
+
+      - name: 更新したデータをリポジトリに保存
+        run: |
+          git config user.name "ranking-bot"
+          git config user.email "ranking-bot@users.noreply.github.com"
+          git add data/universe.csv data/splits.csv data/edinet/fund_tidy.csv data/edinet/fundamentals_done.txt reports/rank_history.csv models/jump_model.pkl 2>/dev/null || true
+          git commit -m "ranking $(date +%F)" || echo "変更なし"
+          git push || echo "push失敗"
+
+      - name: Webページを用意
+        run: |
+          mkdir -p site
+          cp reports/latest.html site/index.html
+          cp "$(ls -t reports/ranking_*.csv | head -1)" site/ranking.csv
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
