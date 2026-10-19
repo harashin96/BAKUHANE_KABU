@@ -17,8 +17,12 @@ ANNUAL = {"120", "130"}
 
 
 def load_tidy(path=TIDY) -> pd.DataFrame:
-    f = pd.read_csv(path, dtype={"code": str, "docTypeCode": str}, parse_dates=["submit_date", "periodEnd"])
-    f["code"] = f["code"].str[:4]
+    f = pd.read_csv(path, dtype={"code": str, "docTypeCode": str, "docID": str})
+    # 日付の書き方が混ざっていても読めるように(例: 2026-10-19 / 2026-10-19 00:00:00)
+    f["submit_date"] = pd.to_datetime(f["submit_date"].astype(str).str[:10], errors="coerce")
+    f["periodEnd"] = pd.to_datetime(f["periodEnd"].astype(str).str[:10], errors="coerce")
+    f = f.dropna(subset=["submit_date"])
+    f["code"] = f["code"].astype(str).str[:4]
     return f.sort_values(["code", "submit_date"]).reset_index(drop=True)
 
 

@@ -48,8 +48,12 @@ if not a.no_update:
         n = E.build_fundamentals(idx, key, collect=rows)
         if rows:
             new = E.tidy_fundamentals(pd.DataFrame(rows).astype(str))
+            for c in ["submit_date", "periodEnd"]:   # 既存のファイルと同じ「YYYY-MM-DD」にそろえる
+                new[c] = pd.to_datetime(new[c], errors="coerce").dt.strftime("%Y-%m-%d")
             T = E.EDIR / "fund_tidy.csv"
-            old = pd.read_csv(T, dtype={"code": str, "docTypeCode": str})
+            old = pd.read_csv(T, dtype=str)
+            for c in ["submit_date", "periodEnd"]:
+                old[c] = old[c].astype(str).str[:10]
             allt = pd.concat([old, new.astype({"code": str, "docTypeCode": str})], ignore_index=True).drop_duplicates("docID", keep="last")
             allt.to_csv(T, index=False)
             log.info(f"財務データを追加: {len(new)} 書類")
