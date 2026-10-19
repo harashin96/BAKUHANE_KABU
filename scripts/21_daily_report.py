@@ -12,6 +12,7 @@ import time
 from datetime import date, timedelta
 
 import _bootstrap  # noqa: F401
+import numpy as np
 import pandas as pd
 
 from jpstocks.config import load_config, setup_logging
@@ -67,7 +68,22 @@ prices = load_prices()
 since = (prices["date"].max() - pd.Timedelta(days=700)).strftime("%Y-%m-%d")
 w = build_world(prices, uni, since=since)
 bundle = load_model()
-today = score_day(w, bundle)
+# 最新日の対象銘柄数を確認(データがそろっていない日は、そろっている直近の日を使う)
+cnt = w.elig.sum(axis=1)
+medval = w.m.value.iloc[-40:].rolling(20, min_periods=15).median()
+for d in w.elig.index[-5:]:
+    k = w.elig.index.get_loc(d)
+    px_ok = int(w.m.close.loc[d].notna().sum())
+    val = medval.loc[d] if d in medval.index else pd.Series(dtype=float)
+    log.info(f"  {d.date()}: 対象 {int(cnt.loc[d])} 銘柄 / 終値あり {px_ok} / 売買代金3千万以上 {int((val >= 0.3e8).sum())} / "
+             f"時価総額あり {int(w.P['mcap'].loc[d].notna().sum())} / 純資産あり {int(w.P['equity'].loc[d].gt(0).sum())}")
+ok = np.flatnonzero(cnt.to_numpy() >= 100)
+if len(ok) == 0:
+    raise SystemExit("対象銘柄が100未満の日しかありません。ログの内訳を確認してください。")
+i_use = int(ok[-1])
+if i_use != len(cnt) - 1:
+    log.warning(f"最新日 {w.elig.index[-1].date()} はデータがそろっていないため、{w.elig.index[i_use].date()} 時点でランキングを作ります")
+today = score_day(w, bundle, i=i_use)
 top, dropped, hist = update_history(today, top_n)
 path = write_report(today, top, dropped, w, bundle, track_record(hist, w), budget, stop, rc.get("publish_dir") or "")
 log.info(f"完了 ({time.time()-t0:.0f}秒): {path}")
