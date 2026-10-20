@@ -92,6 +92,12 @@ def load_positions() -> pd.DataFrame | None:
     return p if len(p) else None
 
 
+def _links(code) -> str:
+    """銘柄コード(投資の森へのリンク) + Yahoo!ファイナンスのボタン"""
+    return (f"<a href='https://nikkeiyosoku.com/stock/{code}/' target='_blank'>{code}</a>"
+            f"<a class='yb' href='https://finance.yahoo.co.jp/quote/{code}.T' target='_blank' title='Yahoo!ファイナンス'>Y!</a>")
+
+
 def _fmt(x, f="{:.1f}"):
     return "−" if pd.isna(x) else f.format(x)
 
@@ -131,7 +137,7 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
     for k, (code, r) in enumerate(df.iterrows(), 1):
         cost100 = r["price"] * 100
         afford = "" if cost100 <= budget else ' <span class="warn">予算超</span>'
-        rows.append(f"<tr><td>{k}</td><td><a href='https://nikkeiyosoku.com/stock/{code}/' target='_blank'>{code}</a></td>"
+        rows.append(f"<tr><td>{k}</td><td>{_links(code)}</td>"
                     f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
                     f"<td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                     f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{cost100/1e4:,.1f}万{afford}</td>"
@@ -164,7 +170,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         sell_day = _bday_after(r["entry_date"], H)
         stop = r["entry_price"] * (1 + stop_loss)
         rows_html.append(f"""<tr class="{'new' if new else ''}">
-<td>{k}</td><td><a href="https://nikkeiyosoku.com/stock/{code}/" target="_blank">{code}</a></td>
+<td>{k}</td><td>{_links(code)}</td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
 <td class="num"><b>{r['p_jump']*100:.0f}%</b></td><td class="num">{r['p_crash']*100:.0f}%</td>
 <td>{status}</td>
@@ -198,7 +204,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         if dips is not None and len(dips):
             drow = []
             for code, r in dips.iterrows():
-                drow.append(f"<tr><td><a href='https://nikkeiyosoku.com/stock/{code}/' target='_blank'>{code}</a></td>"
+                drow.append(f"<tr><td>{_links(code)}</td>"
                             f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
                             f"<td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                             f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
@@ -228,7 +234,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                 act = '<span class="sell">3か月経過: 売り時</span>'
             else:
                 act = f"保有継続(あと{np.busday_count(d.date(), due.date())}営業日)"
-            prow.append(f"<tr><td>{c}</td><td>{html.escape(str(nm(c)))}</td><td>{pd.Timestamp(p['buy_date']).date()}</td>"
+            prow.append(f"<tr><td>{_links(c)}</td><td>{html.escape(str(nm(c)))}</td><td>{pd.Timestamp(p['buy_date']).date()}</td>"
                         f"<td class='num'>{p['buy_price']:,.0f}</td><td class='num'>{cur:,.0f}</td><td class='num'>{pl*100:+.1f}%</td>"
                         f"<td>{due.date()}</td><td class='num'>{p['buy_price']*(1+stop_loss):,.0f}</td>"
                         f"<td class='num'>{rank or '圏外'}</td><td>{act}</td></tr>")
@@ -269,6 +275,8 @@ th,td{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;verti
 th{{font-size:12px;color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--bg)}}
 td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:150px;max-width:220px;white-space:normal}}
 .sec{{font-size:11px;color:var(--mut)}} tr.new{{background:var(--hl)}} a{{color:var(--acc)}}
+.yb{{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid var(--line);border-radius:4px;font-size:11px;line-height:17px;text-decoration:none;color:#7b0099}}
+.yb:hover{{background:#7b0099;color:#fff;border-color:#7b0099}}
 .buy{{color:var(--acc);font-weight:700}} .warn{{color:var(--warn);font-size:11px}} .sell{{color:var(--sell);font-weight:700}}
 .tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}}
 .tab{{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}}
