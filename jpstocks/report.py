@@ -131,7 +131,7 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
     for k, (code, r) in enumerate(df.iterrows(), 1):
         cost100 = r["price"] * 100
         afford = "" if cost100 <= budget else ' <span class="warn">予算超</span>'
-        rows.append(f"<tr><td>{k}</td><td><a href='https://kabutan.jp/stock/?code={code}' target='_blank'>{code}</a></td>"
+        rows.append(f"<tr><td>{k}</td><td><a href='https://nikkeiyosoku.com/stock/{code}/' target='_blank'>{code}</a></td>"
                     f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
                     f"<td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                     f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{cost100/1e4:,.1f}万{afford}</td>"
@@ -164,7 +164,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         sell_day = _bday_after(r["entry_date"], H)
         stop = r["entry_price"] * (1 + stop_loss)
         rows_html.append(f"""<tr class="{'new' if new else ''}">
-<td>{k}</td><td><a href="https://kabutan.jp/stock/?code={code}" target="_blank">{code}</a></td>
+<td>{k}</td><td><a href="https://nikkeiyosoku.com/stock/{code}/" target="_blank">{code}</a></td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
 <td class="num"><b>{r['p_jump']*100:.0f}%</b></td><td class="num">{r['p_crash']*100:.0f}%</td>
 <td>{status}</td>
@@ -198,7 +198,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         if dips is not None and len(dips):
             drow = []
             for code, r in dips.iterrows():
-                drow.append(f"<tr><td><a href='https://kabutan.jp/stock/?code={code}' target='_blank'>{code}</a></td>"
+                drow.append(f"<tr><td><a href='https://nikkeiyosoku.com/stock/{code}/' target='_blank'>{code}</a></td>"
                             f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
                             f"<td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                             f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
