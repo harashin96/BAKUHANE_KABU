@@ -95,7 +95,8 @@ def load_positions() -> pd.DataFrame | None:
 def _links(code) -> str:
     """銘柄コード(投資の森へのリンク) + Yahoo!ファイナンスのボタン"""
     return (f"<a href='https://nikkeiyosoku.com/stock/{code}/' target='_blank'>{code}</a>"
-            f"<a class='yb' href='https://finance.yahoo.co.jp/quote/{code}.T' target='_blank' title='Yahoo!ファイナンス'>Y!</a>")
+            f"<a class='yb' href='https://finance.yahoo.co.jp/quote/{code}.T' target='_blank' title='Yahoo!ファイナンス'>Y!</a>"
+            f"<button class='fav' data-code='{code}' title='お気に入り'>☆</button>")
 
 
 def _fmt(x, f="{:.1f}"):
@@ -257,7 +258,10 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 
     alts = alt_rankings(today, dips)
     tab_btn = "<button class='tab' data-t='bakuhane'>爆ハネ期待値</button>" + "".join(
-        f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts)
+        f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts) + \
+        "<button class='tab' data-t='mypage'>マイページ</button>"
+    from .mypage import mypage_parts, stocks_json
+    mp_html, mp_js = mypage_parts(H, stop_loss)
     alt_html = "".join(f"<section class='pane' id='tab-{tid}'><p class='note'>{desc}</p>{_simple_table(df, nm, sec, budget)}</section>"
                        for tid, name, desc, df in alts)
 
@@ -277,10 +281,15 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 .sec{{font-size:11px;color:var(--mut)}} tr.new{{background:var(--hl)}} a{{color:var(--acc)}}
 .yb{{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid var(--line);border-radius:4px;font-size:11px;line-height:17px;text-decoration:none;color:#7b0099}}
 .yb:hover{{background:#7b0099;color:#fff;border-color:#7b0099}}
+.fav{{margin-left:4px;padding:0 4px;border:none;background:transparent;color:#e8a200;font-size:15px;cursor:pointer;line-height:17px}}
+.del{{font:inherit;font-size:12px;border:1px solid var(--line);background:transparent;color:var(--mut);border-radius:6px;cursor:pointer}}
+.mp-form{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}}
+.mp-form input{{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}}
 .buy{{color:var(--acc);font-weight:700}} .warn{{color:var(--warn);font-size:11px}} .sell{{color:var(--sell);font-weight:700}}
 .tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}}
 .tab{{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}}
-.tab.on{{background:var(--acc);border-color:var(--acc);color:#fff}} .pane{{display:none}} .pane.on{{display:block}}
+.tab.on{{background:var(--acc);border-color:var(--acc);color:#fff}}
+.btn{{font:inherit;font-size:13px;padding:5px 12px;border:1px solid var(--acc);border-radius:999px;background:transparent;color:var(--acc);cursor:pointer}} .pane{{display:none}} .pane.on{{display:block}}
 </style></head><body>
 <h1>爆ハネ期待値ランキング <span style="color:var(--mut);font-weight:400">{d.date()} 終値時点</span></h1>
 <p class="note">作成: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}(平日18:30ごろ自動更新)</p>
@@ -302,6 +311,7 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 {track_html}
 </section>
 {alt_html}
+{mp_html}
 <script>
 (function(){{
   var tabs=document.querySelectorAll('.tab'), panes=document.querySelectorAll('.pane');
@@ -316,12 +326,14 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
   show(first||'bakuhane');
 }})();
 </script>
+{mp_js}
 <p class="note">モデル: {bundle['trained_until']} までのデータで学習(サンプル {bundle['n_samples']:,})。データ: 株価 yfinance、財務 EDINET(提出日以降のみ使用)。金融業は除外、売買代金(20日中央値)3,000万円以上。</p>
 </body></html>"""
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / f"ranking_{d.date()}.html"
     out.write_text(page, encoding="utf-8")
     (REPORTS / "latest.html").write_text(page, encoding="utf-8")
+    (REPORTS / "stocks.json").write_text(stocks_json(today, w, market), encoding="utf-8")
     if publish_dir:
         import os
         from pathlib import Path
