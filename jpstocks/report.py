@@ -93,7 +93,7 @@ def load_positions() -> pd.DataFrame | None:
 
 
 def _fmt(x, f="{:.1f}"):
-    return "" if pd.isna(x) else f.format(x)
+    return "−" if pd.isna(x) else f.format(x)
 
 
 def alt_rankings(today: pd.DataFrame, dips: pd.DataFrame | None = None) -> list:
@@ -136,7 +136,7 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
                     f"<td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                     f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{cost100/1e4:,.1f}万{afford}</td>"
                     f"<td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
-                    f"<td class='num'><b>{_fmt(r['NCR'],'{:.2f}')}</b></td><td class='num'>{_fmt(r['DY'],'{:.1f}')}%</td>"
+                    f"<td class='num'><b>{_fmt(r['NCR'],'{:.2f}')}</b></td><td class='num'>{_fmt(r['DY'],'{:.1f}%')}</td>"
                     f"<td class='num'>{r['mcap_oku']:,.0f}</td><td class='num'>{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class='num'>{_fmt(r['HI52'],'{:.0f}')}%</td></tr>")
     if not rows:
         return "<p class='note'>今日は該当する銘柄がありません。</p>"
@@ -171,7 +171,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 <td class="num">{r['price']:,.0f}</td><td class="num">{cost100/1e4:,.1f}万{afford}</td>
 <td>{pd.Timestamp(r['entry_date']).date()}<div class="sec">@{r['entry_price']:,.0f}円</div></td>
 <td>{sell_day.date()}</td><td class="num">{stop:,.0f}</td>
-<td class="num">{_fmt(r['PER'])}</td><td class="num">{_fmt(r['PBR'],'{:.2f}')}</td><td class="num">{_fmt(r['NCR'],'{:.2f}')}</td>
+<td class="num">{_fmt(r['PER'])}</td><td class="num">{_fmt(r['PBR'],'{:.2f}')}</td><td class="num">{_fmt(r['DY'],'{:.1f}%')}</td><td class="num">{_fmt(r['NCR'],'{:.2f}')}</td>
 <td class="num">{r['mcap_oku']:,.0f}</td><td class="num">{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class="num">{_fmt(r['HI52'],'{:.0f}')}%</td>
 <td class="num">{_fmt(r['VOLSURGE'],'{:.1f}')}倍</td><td class="num">{_fmt(r['VOL60'],'{:.0f}')}%</td>
 </tr>""")
@@ -202,11 +202,11 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                             f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
                             f"<td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                             f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
-                            f"<td class='num'>{_fmt(r['NCR'],'{:.2f}')}</td><td class='num'>{int(r['AGE'])}</td></tr>")
+                            f"<td class='num'>{_fmt(r['DY'],'{:.1f}%')}</td><td class='num'>{_fmt(r['NCR'],'{:.2f}')}</td><td class='num'>{int(r['AGE'])}</td></tr>")
             body = (f"<p class='note'><b>相場に引きずられて下がった優良株</b>(黒字・割安度が上位30%・決算発表から20営業日以上=業績の悪化による下げではない・"
                     f"直近1か月で市場全体({market['r20']*100:+.1f}%)以上に下落)。並び順はランキングの点数。"
                     "お得度が「押し目」以上のときに、ランキング上位とあわせて買う候補。</p>"
-                    "<div class='wrap'><table><tr><th>コード</th><th>銘柄</th><th>1か月</th><th>爆ハネ確率</th><th>暴落確率</th><th>株価</th><th>PER</th><th>PBR</th><th>ネットキャッシュ比率</th><th>決算から(営業日)</th></tr>"
+                    "<div class='wrap'><table><tr><th>コード</th><th>銘柄</th><th>1か月</th><th>爆ハネ確率</th><th>暴落確率</th><th>株価</th><th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>決算から(営業日)</th></tr>"
                     + "".join(drow) + "</table></div>")
             if market["level"] in ("大チャンス", "買い場", "押し目"):
                 mk_html += body
@@ -287,7 +287,7 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 <p class="note"><b>爆ハネ期待値</b>: 3か月以内に+30%以上の確率 − -30%以下の確率 の高い順(上位{len(top)}銘柄)。「買い時(新規ランクイン)」の翌営業日に買い、約3か月保有。</p>
 <div class="wrap"><table>
 <tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>売り時の目安</th><th>損切り目安</th>
-<th>PER</th><th>PBR</th><th>ネットキャッシュ比率</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th><th>出来高(直近/平常)</th><th>年ボラ</th></tr>
+<th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th><th>出来高(直近/平常)</th><th>年ボラ</th></tr>
 {''.join(rows_html)}
 </table></div>
 {drop_html}
