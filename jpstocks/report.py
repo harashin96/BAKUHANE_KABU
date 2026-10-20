@@ -96,6 +96,55 @@ def _fmt(x, f="{:.1f}"):
     return "" if pd.isna(x) else f.format(x)
 
 
+def alt_rankings(today: pd.DataFrame, dips: pd.DataFrame | None = None) -> list:
+    """切り替えて見る別のランキング: (id, タブ名, 説明, 表)"""
+    t = today.copy()
+    prof = t["PER"] > 0
+    out = []
+    k = t[(t["NCR"] >= 1) & prof].sort_values("kiyo", ascending=False).head(60)
+    out.append(("kiyohara", f"清原式({len(k)})",
+                "<b>清原基準</b>: ネットキャッシュ比率(流動資産+投資有価証券×70%−負債)÷時価総額 が<b>1以上</b>の黒字企業。並び順は「ネットキャッシュ比率と低PERの順位」の平均。"
+                "検証(2017〜2025年): 該当銘柄を全部均等に持つと市場平均より<b>年+10%</b>(t=3.9)、直近1年も+8%。"
+                "1〜3銘柄に絞ると成績は運しだいになるので、<b>できるだけ多くの銘柄に分けて</b>(S株なら少額で可)、3か月〜半年ごとに見直すのが検証どおりの使い方。"
+                "<br>注意: 不動産・建設などは流動資産に「販売用不動産」「未成工事支出金」が多く含まれ、現金ではないのに比率が高く出やすい(実際より割安に見える)。", k))
+    v = t[prof].copy()
+    for c, asc in [("NCR", True), ("PER", False), ("PBR", False), ("DY", True)]:
+        v["r_" + c] = v[c].rank(pct=True, ascending=asc)
+    v["vscore"] = v[["r_NCR", "r_PER", "r_PBR", "r_DY"]].mean(axis=1)
+    v = v.sort_values("vscore", ascending=False).head(30)
+    out.append(("value", "割安総合",
+                "<b>割安総合</b>: ネットキャッシュ比率・低PER・低PBR・高配当の4つの順位の平均(黒字企業のみ)。"
+                "検証(2017〜2025年): 上位30銘柄で市場平均より<b>年+8%</b>(t=2.7、9年中8年で勝ち)。直近1年は+2.5%。月1回〜四半期ごとに入れ替え。", v))
+    dy = t[prof & (t["DY"] > 0) & (t["DY"] < 15)].sort_values("DY", ascending=False).head(30)
+    out.append(("dividend", "高配当",
+                "<b>高配当</b>: 予想ではなく直近の有価証券報告書の配当総額÷時価総額(黒字企業のみ)。"
+                "検証では市場平均より年+2〜4%程度と効果は弱め(t≈1)。配当を受け取りたい人向けの参考。", dy))
+    if dips is not None:
+        out.append(("dip", f"巻き添え安({len(dips)})",
+                    "<b>相場に引きずられて下がった優良株</b>: 黒字・割安度が上位30%・決算発表から20営業日以上(業績悪化による下げではない)・"
+                    "直近1か月で市場全体以上に下落。並び順はランキングの点数。<b>相場のお得度が「押し目」以上のとき</b>に買う候補(平常時の上乗せは小さい)。", dips))
+    return out
+
+
+def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
+    rows = []
+    for k, (code, r) in enumerate(df.iterrows(), 1):
+        cost100 = r["price"] * 100
+        afford = "" if cost100 <= budget else ' <span class="warn">予算超</span>'
+        rows.append(f"<tr><td>{k}</td><td><a href='https://kabutan.jp/stock/?code={code}' target='_blank'>{code}</a></td>"
+                    f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
+                    f"<td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
+                    f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{cost100/1e4:,.1f}万{afford}</td>"
+                    f"<td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
+                    f"<td class='num'><b>{_fmt(r['NCR'],'{:.2f}')}</b></td><td class='num'>{_fmt(r['DY'],'{:.1f}')}%</td>"
+                    f"<td class='num'>{r['mcap_oku']:,.0f}</td><td class='num'>{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class='num'>{_fmt(r['HI52'],'{:.0f}')}%</td></tr>")
+    if not rows:
+        return "<p class='note'>今日は該当する銘柄がありません。</p>"
+    return ("<div class='wrap'><table><tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>株価</th><th>100株</th>"
+            "<th>PER</th><th>PBR</th><th>ネットキャッシュ比率</th><th>配当利回り</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th></tr>"
+            + "".join(rows) + "</table></div>")
+
+
 def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundle: dict, track: pd.DataFrame | None,
                  budget: float, stop_loss: float, publish_dir: str = "", market: dict | None = None,
                  dips: pd.DataFrame | None = None) -> str:
@@ -200,6 +249,12 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                           f"(同じ期間の全対象銘柄の平均 {t.bench.mean()*100:+.1f}%) / 爆ハネ(+30%以上) {(t.ret>=0.3).mean()*100:.0f}% / "
                           f"-30%以下 {(t.ret<=-0.3).mean()*100:.0f}%</p>")
 
+    alts = alt_rankings(today, dips)
+    tab_btn = "<button class='tab' data-t='bakuhane'>爆ハネ期待値</button>" + "".join(
+        f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts)
+    alt_html = "".join(f"<section class='pane' id='tab-{tid}'><p class='note'>{desc}</p>{_simple_table(df, nm, sec, budget)}</section>"
+                       for tid, name, desc, df in alts)
+
     base_j, base_c = bundle["base_jump"] * 100, bundle["base_crash"] * 100
     page = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>爆ハネ期待値ランキング {d.date()}</title>
@@ -215,6 +270,9 @@ th{{font-size:12px;color:var(--mut);font-weight:600;position:sticky;top:0;backgr
 td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:150px;max-width:220px;white-space:normal}}
 .sec{{font-size:11px;color:var(--mut)}} tr.new{{background:var(--hl)}} a{{color:var(--acc)}}
 .buy{{color:var(--acc);font-weight:700}} .warn{{color:var(--warn);font-size:11px}} .sell{{color:var(--sell);font-weight:700}}
+.tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}}
+.tab{{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}}
+.tab.on{{background:var(--acc);border-color:var(--acc);color:#fff}} .pane{{display:none}} .pane.on{{display:block}}
 </style></head><body>
 <h1>爆ハネ期待値ランキング <span style="color:var(--mut);font-weight:400">{d.date()} 終値時点</span></h1>
 <p class="note">作成: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}(平日18:30ごろ自動更新)</p>
@@ -224,7 +282,9 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 過去の検証(2019〜2025年)では上位20銘柄の3か月リターンが全銘柄平均より約+2.8%高かった一方、1銘柄ずつでは中央値は+1%程度で、3〜4銘柄に1つが大きく跳ねる分布です。<b>数銘柄に分けて買う</b>ことを前提にしてください。投資判断はご自身で。</p>
 {mk_html}
 {pos_html}
-<h2>ランキング 上位{len(top)}銘柄</h2>
+<div class="tabs">{tab_btn}</div>
+<section class="pane" id="tab-bakuhane">
+<p class="note"><b>爆ハネ期待値</b>: 3か月以内に+30%以上の確率 − -30%以下の確率 の高い順(上位{len(top)}銘柄)。「買い時(新規ランクイン)」の翌営業日に買い、約3か月保有。</p>
 <div class="wrap"><table>
 <tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>売り時の目安</th><th>損切り目安</th>
 <th>PER</th><th>PBR</th><th>ネットキャッシュ比率</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th><th>出来高(直近/平常)</th><th>年ボラ</th></tr>
@@ -232,6 +292,22 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 </table></div>
 {drop_html}
 {track_html}
+</section>
+{alt_html}
+<script>
+(function(){{
+  var tabs=document.querySelectorAll('.tab'), panes=document.querySelectorAll('.pane');
+  function show(id){{
+    var ok=false; panes.forEach(function(p){{var on=p.id==='tab-'+id; p.classList.toggle('on',on); ok=ok||on;}});
+    if(!ok){{id='bakuhane'; document.getElementById('tab-bakuhane').classList.add('on');}}
+    tabs.forEach(function(b){{b.classList.toggle('on',b.dataset.t===id);}});
+    try{{localStorage.setItem('tab',id);}}catch(e){{}}
+  }}
+  tabs.forEach(function(b){{b.addEventListener('click',function(){{show(b.dataset.t); history.replaceState(null,'','#'+b.dataset.t);}});}});
+  var first=(location.hash||'').slice(1); if(!first){{try{{first=localStorage.getItem('tab')||'';}}catch(e){{}}}}
+  show(first||'bakuhane');
+}})();
+</script>
 <p class="note">モデル: {bundle['trained_until']} までのデータで学習(サンプル {bundle['n_samples']:,})。データ: 株価 yfinance、財務 EDINET(提出日以降のみ使用)。金融業は除外、売買代金(20日中央値)3,000万円以上。</p>
 </body></html>"""
     REPORTS.mkdir(exist_ok=True)
