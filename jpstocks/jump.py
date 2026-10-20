@@ -186,5 +186,74 @@ def score_day(w: World, bundle: dict, i: int = -1) -> pd.DataFrame:
     out["VOL60"] = raw["VOL60"] * np.sqrt(252) * 100
     out["MA25GAP"] = raw["MA25GAP"] * 100
     out["value_oku"] = w.m.value.reindex(w.elig.index).iloc[max(0, i - 19):i + 1][out.index].median() / 1e8
+    out["AGE"] = raw["AGE"]                                  # 最後の決算書類から何営業日たったか
+    out["kiyo"] = (X["r_NCR"] + X["r_EY"]) / 2               # 割安度(ネットキャッシュ比率と益利回りの順位の平均, 0〜1)
+    out["EY"] = raw["EY"]
     out["date"] = d
     return out.sort_values("score", ascending=False)
+
+
+GRADES = [  # (お得度の順位の下限, 名前, 検証での目安)  検証: 2012〜2026年の日次、市場全体(等金額)の3か月後
+    (95, "大チャンス", "過去の該当日(全体の約5%)の3か月後の市場は平均 +9.2%(全期間平均 +3.1%)。プラスになった割合 84%、-10%以上の下落 0%"),
+    (85, "買い場", "過去の該当日(約10%)の3か月後は平均 +4.3%。-10%以上の下落は 2.8%(平常時 5.7%)"),
+    (70, "押し目", "過去の該当日(約17%)の3か月後は平均 +3.2%(ほぼ平均並み)。ここからさらに下げたら買い増しの準備"),
+    (50, "やや割安", "平均並み。普段どおり"),
+    (-1, "平常", "平均並み。急落に備えて資金の一部を現金で残しておくと、買い場で動ける"),
+]
+MARKET_INDICATORS = {  # 名前: (向き +1=大きいほどお得, 単位)
+    "騰落レシオ(25日)": -1, "25日線より上の銘柄の割合%": -1, "52週安値の銘柄の割合%": 1, "市場の25日線からの乖離%": -1,
+    "60日高値からの下落%": -1, "5日の騰落%": -1, "20日の騰落%": -1, "市場の値動きの大きさ(年率%)": 1, "個別株の値動きの大きさ(中央値)": 1,
+}
+
+
+def market_indicators(m: Market, min_value_oku: float = 0.3) -> pd.DataFrame:
+    """相場全体の「売られすぎ」指標(日付 × 指標)。対象銘柄の等金額平均を市場全体とみなす"""
+    el = eligible(m, min_value_oku)
+    px = m.adj_close
+    r = px.pct_change(fill_method=None).clip(-0.5, 1.0)
+    e1 = el.shift(1, fill_value=False)
+    mkt = r.where(e1).mean(axis=1).fillna(0)
+    idx = (1 + mkt).cumprod()
+    up = (r > 0).where(e1).sum(axis=1)
+    dn = (r < 0).where(e1).sum(axis=1)
+    n = el.sum(axis=1).replace(0, np.nan)
+    F = pd.DataFrame(index=px.index)
+    F["騰落レシオ(25日)"] = up.rolling(25).sum() / dn.rolling(25).sum() * 100
+    F["25日線より上の銘柄の割合%"] = (px > px.rolling(25).mean()).where(el).sum(axis=1) / n * 100
+    F["52週安値の銘柄の割合%"] = (px <= px.rolling(250, min_periods=200).min() * 1.0001).where(el).sum(axis=1) / n * 100
+    F["市場の25日線からの乖離%"] = (idx / idx.rolling(25).mean() - 1) * 100
+    F["60日高値からの下落%"] = (idx / idx.rolling(60).max() - 1) * 100
+    F["5日の騰落%"] = (idx / idx.shift(5) - 1) * 100
+    F["20日の騰落%"] = (idx / idx.shift(20) - 1) * 100
+    F["市場の値動きの大きさ(年率%)"] = mkt.rolling(20).std() * np.sqrt(252) * 100
+    F["個別株の値動きの大きさ(中央値)"] = r.where(el).rolling(20).std().median(axis=1) * np.sqrt(252) * 100
+    return F.iloc[260:]
+
+
+def market_status(w: World, i: int = -1) -> dict:
+    """相場全体の「お得度」(0〜100)と5段階の判定
+
+    9つの売られすぎ指標それぞれの「過去の中での位置(順位)」を平均し、さらにその平均の過去の中での順位をお得度とする。
+    検証(2012〜2026年): お得度95以上(全体の約5%の日)の3か月後の市場は平均 +9.2%、85〜95は +4.3%、70〜85は +3.2%、
+    それ以下は +2.5%前後。前半(2012〜2018)・後半(2019〜2026)とも同じ傾向。
+    """
+    d = w.elig.index[i]
+    F = market_indicators(w.m)
+    F = F[F.index <= d]
+    P = pd.DataFrame({k: (F[k] * s).rank(pct=True) * 100 for k, s in MARKET_INDICATORS.items()})
+    comp = P.mean(axis=1)
+    score = comp.rank(pct=True) * 100
+    sc = float(score.iloc[-1])
+    level, note = next((name, note) for th, name, note in GRADES if sc >= th)
+    hist = [(dd, float(v), next(nm for th, nm, _ in GRADES if v >= th)) for dd, v in score.iloc[-20:].items()]
+    dd60 = float(F["60日高値からの下落%"].iloc[-1]) / 100
+    return {"level": level, "note": note, "score": sc, "dd60": dd60,
+            "r5": float(F["5日の騰落%"].iloc[-1]) / 100, "r20": float(F["20日の騰落%"].iloc[-1]) / 100,
+            "indicators": [(k, float(F[k].iloc[-1]), float(P[k].iloc[-1])) for k in MARKET_INDICATORS], "history": hist}
+
+
+def dip_candidates(today: pd.DataFrame, status: dict, n: int = 15) -> pd.DataFrame:
+    """相場に引きずられて下がった優良株: 黒字・割安(上位30%)・決算発表から20営業日以上・直近1か月で市場以上に下落"""
+    t = today
+    q = t[(t["EY"] > 0) & (t["kiyo"] >= 0.7) & (t["AGE"] >= 20) & (t["RET1M"] / 100 <= status["r20"])]
+    return q.sort_values("score", ascending=False).head(n)

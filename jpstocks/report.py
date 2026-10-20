@@ -97,7 +97,8 @@ def _fmt(x, f="{:.1f}"):
 
 
 def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundle: dict, track: pd.DataFrame | None,
-                 budget: float, stop_loss: float, publish_dir: str = "") -> str:
+                 budget: float, stop_loss: float, publish_dir: str = "", market: dict | None = None,
+                 dips: pd.DataFrame | None = None) -> str:
     d = pd.Timestamp(today["date"].iloc[0])
     names = w.universe.set_index(w.universe["code"].astype(str))
     def nm(c):
@@ -128,6 +129,41 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 
     # 保有銘柄
     pos = load_positions()
+    # 相場の状態(お得度)と、相場に引きずられて下がった優良株
+    mk_html = ""
+    if market is not None:
+        colors = {"大チャンス": "#b42318", "買い場": "#d9480f", "押し目": "#e8a200", "やや割安": "#5c8a6b", "平常": "#8a8a85"}
+        c = colors.get(market["level"], "#888")
+        strip = "".join(f"<span title='{dd.date()} {lv} {v:.0f}' style='display:inline-block;width:14px;height:14px;margin-right:2px;border-radius:3px;background:{colors[lv]}'></span>"
+                        for dd, v, lv in market["history"])
+        ind_rows = "".join(f"<tr><td>{html.escape(k)}</td><td class='num'>{v:,.1f}</td><td class='num'>{p:.0f}</td></tr>" for k, v, p in market["indicators"])
+        legend = " ".join(f"<span style='color:{colors[n]}'>■</span>{n}" for n in ["大チャンス", "買い場", "押し目", "やや割安", "平常"])
+        mk_html = (f"<h2>相場のお得度: <span style='color:{c}'>{market['level']}</span> "
+                   f"<span style='color:var(--mut);font-weight:400'>({market['score']:.0f} / 100)</span></h2>"
+                   f"<p class='note'>{html.escape(market['note'])}<br>"
+                   f"直近20営業日: {strip} <span style='font-size:11px'>{legend}</span><br>"
+                   f"9つの売られすぎ指標(騰落レシオ・25日線より上の銘柄の割合・52週安値の銘柄数・下落の深さ・値動きの大きさなど)を、過去と比べた位置で採点。"
+                   f"95以上=大チャンス / 85以上=買い場 / 70以上=押し目 / 50以上=やや割安。</p>"
+                   "<details><summary class='note'>指標の内訳</summary><table><tr><th>指標</th><th>今の値</th><th>お得度への寄与(0〜100)</th></tr>"
+                   + ind_rows + "</table></details>")
+        if dips is not None and len(dips):
+            drow = []
+            for code, r in dips.iterrows():
+                drow.append(f"<tr><td><a href='https://kabutan.jp/stock/?code={code}' target='_blank'>{code}</a></td>"
+                            f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
+                            f"<td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
+                            f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
+                            f"<td class='num'>{_fmt(r['NCR'],'{:.2f}')}</td><td class='num'>{int(r['AGE'])}</td></tr>")
+            body = (f"<p class='note'><b>相場に引きずられて下がった優良株</b>(黒字・割安度が上位30%・決算発表から20営業日以上=業績の悪化による下げではない・"
+                    f"直近1か月で市場全体({market['r20']*100:+.1f}%)以上に下落)。並び順はランキングの点数。"
+                    "お得度が「押し目」以上のときに、ランキング上位とあわせて買う候補。</p>"
+                    "<div class='wrap'><table><tr><th>コード</th><th>銘柄</th><th>1か月</th><th>爆ハネ確率</th><th>暴落確率</th><th>株価</th><th>PER</th><th>PBR</th><th>ネットキャッシュ比率</th><th>決算から(営業日)</th></tr>"
+                    + "".join(drow) + "</table></div>")
+            if market["level"] in ("大チャンス", "買い場", "押し目"):
+                mk_html += body
+            else:
+                mk_html += "<details><summary class='note'>相場に引きずられて下がった優良株(今は参考。クリックで開く)</summary>" + body + "</details>"
+
     pos_html = ""
     if pos is not None:
         prow = []
@@ -186,6 +222,7 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 <b>使い方</b>: 「買い時(新規ランクイン)」の銘柄を翌営業日の寄り付きで買い、<b>約3か月(63営業日)保有</b>が検証で最も良かった方法です。
 損切り目安({stop_loss*100:.0f}%)は任意: 平均リターンは少し下がるが、大きな損を防ぐ。
 過去の検証(2019〜2025年)では上位20銘柄の3か月リターンが全銘柄平均より約+2.8%高かった一方、1銘柄ずつでは中央値は+1%程度で、3〜4銘柄に1つが大きく跳ねる分布です。<b>数銘柄に分けて買う</b>ことを前提にしてください。投資判断はご自身で。</p>
+{mk_html}
 {pos_html}
 <h2>ランキング 上位{len(top)}銘柄</h2>
 <div class="wrap"><table>

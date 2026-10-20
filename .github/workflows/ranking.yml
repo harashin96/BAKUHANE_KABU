@@ -81,6 +81,7 @@ jobs:
           git config user.email "ranking-bot@users.noreply.github.com"
           git add data/universe.csv data/splits.csv data/edinet/fund_tidy.csv data/edinet/fundamentals_done.txt reports/rank_history.csv models/jump_model.pkl 2>/dev/null || true
           git commit -m "ranking $(date +%F)" || echo "変更なし"
+          git pull --rebase origin main || echo "取り込み失敗"
           git push || echo "push失敗"
 
       - name: Webページを用意

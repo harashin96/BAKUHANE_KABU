@@ -17,7 +17,7 @@ import pandas as pd
 
 from jpstocks.config import load_config, setup_logging
 from jpstocks.data import fetch_prices, load_prices, load_universe
-from jpstocks.jump import build_world, load_model, score_day
+from jpstocks.jump import build_world, dip_candidates, load_model, market_status, score_day
 from jpstocks.report import track_record, update_history, write_report
 
 ap = argparse.ArgumentParser()
@@ -85,7 +85,10 @@ if i_use != len(cnt) - 1:
     log.warning(f"最新日 {w.elig.index[-1].date()} はデータがそろっていないため、{w.elig.index[i_use].date()} 時点でランキングを作ります")
 today = score_day(w, bundle, i=i_use)
 top, dropped, hist = update_history(today, top_n)
-path = write_report(today, top, dropped, w, bundle, track_record(hist, w), budget, stop, rc.get("publish_dir") or "")
+status = market_status(w, i_use)
+log.info(f"相場のお得度: {status['level']} ({status['score']:.0f})")
+path = write_report(today, top, dropped, w, bundle, track_record(hist, w), budget, stop, rc.get("publish_dir") or "",
+                    market=status, dips=dip_candidates(today, status))
 log.info(f"完了 ({time.time()-t0:.0f}秒): {path}")
 print(top[["p_jump", "p_crash", "price", "days_in"]].head(10).round(3).to_string())
 if not a.no_open:
