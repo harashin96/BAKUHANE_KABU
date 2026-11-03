@@ -10,7 +10,7 @@ import pandas as pd
 
 from .config import ROOT
 from .jump import H
-from .research import answer_check, grade_cell, latest_grades, load_research, research_html
+from .research import answer_check, final_picks, grade_cell, latest_grades, load_research, research_html
 
 log = logging.getLogger("jpstocks")
 REPORTS = ROOT / "reports"
@@ -386,7 +386,9 @@ tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20
     out.write_text(page, encoding="utf-8")
     (REPORTS / "latest.html").write_text(page, encoding="utf-8")
     (REPORTS / "stocks.json").write_text(stocks_json(today, w, market), encoding="utf-8")
-    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live, "candidates": cands, "long_candidates": long_cands}, ensure_ascii=False), encoding="utf-8")
+    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live, "candidates": cands, "long_candidates": long_cands,
+                                                   "picks_short": [] if focus is None else final_picks(focus, grades),
+                                                   "picks_long": [] if long is None else final_picks(long, grades)}, ensure_ascii=False), encoding="utf-8")
     if publish_dir:
         import os
         from pathlib import Path

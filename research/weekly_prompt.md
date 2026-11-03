@@ -8,10 +8,13 @@ Python: `C:\Projects\JP_STOCKS\.venv\Scripts\python.exe`
 2. `https://harashin96.github.io/BAKUHANE_KABU/top.json` を取得する。
    - `candidates`: 絞り込みの候補(ランキング60位以内 かつ 巻き添え安の条件)。順位(rank)・コード・銘柄名・業種・株価・直近1か月の騰落率(ret1m_pct)
    - `long_candidates`: 長期保有の候補(清原式 = ネットキャッシュ比率1以上の黒字企業を期待スコア順、上位15)
+   - `picks_short` / `picks_long`: ページに出している最終候補(3か月保有 / 長期保有)のコード、各5銘柄
    - `stocks`: ランキング上位50銘柄(rank・コード・銘柄名・業種・株価)
-3. 調べる銘柄(**最大6銘柄**): `research/qualitative.csv` で**14日以内に調べていない銘柄**から、`candidates` の順位の高い順に最大3銘柄、`long_candidates` の順位の高い順に最大3銘柄(両方に入っている銘柄は1回だけ)。
-   片方が3銘柄に満たなければ、もう片方から足して最大6銘柄。`stocks` からは足さない。
-   `candidates` も `long_candidates` もない場合だけ、`stocks` の上位から同じく14日以内に調べていない銘柄を最大5銘柄。
+3. 調べる銘柄(**最大15銘柄**、同じ銘柄は1回だけ)。`research/qualitative.csv` の最後の調査日で判断し、次の順に選ぶ:
+   1. `picks_short` と `picks_long`(最終候補)のうち、**3日以上前に調べた銘柄**または未調査の銘柄
+   2. `candidates` と `long_candidates` のうち、**7日以上前に調べた銘柄**または未調査の銘柄(順位の高い順。2つのリストから交互に)
+   `stocks` からは足さない。どのリストもない場合だけ、`stocks` の上位から7日以上前に調べた/未調査の銘柄を最大5銘柄。
+   調べ直しの銘柄は、前回の評価から何が変わったか(新しい開示・決算・株価の動き)を中心に確認する。
    **調べる銘柄が0なら、ここで「新しい候補はありません」と報告して終わる**(commit・push もしない)。
 
 ## 2. 1銘柄ずつ調べる(Web検索)
