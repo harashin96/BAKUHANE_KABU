@@ -1,4 +1,4 @@
-# 週1回の定性調査(Claude Code のスケジュール実行で使う手順)
+# 毎朝の定性調査(Claude Code のスケジュール実行で使う手順。平日 7:30)
 
 作業フォルダ: `C:\Projects\JP_STOCKS\BAKUHANE_KABU`
 Python: `C:\Projects\JP_STOCKS\.venv\Scripts\python.exe`
@@ -8,8 +8,9 @@ Python: `C:\Projects\JP_STOCKS\.venv\Scripts\python.exe`
 2. `https://harashin96.github.io/BAKUHANE_KABU/top.json` を取得する。
    - `candidates`: 絞り込みの候補(ランキング60位以内 かつ 巻き添え安の条件)。順位(rank)・コード・銘柄名・業種・株価・直近1か月の騰落率(ret1m_pct)
    - `stocks`: ランキング上位50銘柄(rank・コード・銘柄名・業種・株価)
-3. 調べる銘柄(最大15銘柄): まず **`candidates` を全部**(順位の高い順)。10銘柄に満たなければ、`stocks` の順位の高い順で10銘柄になるまで足す。
-   `candidates` がない場合は `stocks` の上位10銘柄。どちらも `research/qualitative.csv` で**14日以内に調べた銘柄は飛ばす**。
+3. 調べる銘柄(**最大5銘柄**): `candidates` のうち、`research/qualitative.csv` で**14日以内に調べていない銘柄**を順位の高い順に。ランキング側は足さない。
+   `candidates` がない場合だけ、`stocks` の上位から同じく14日以内に調べていない銘柄を最大5銘柄。
+   **調べる銘柄が0なら、ここで「新しい候補はありません」と報告して終わる**(commit・push もしない)。
 
 ## 2. 1銘柄ずつ調べる(Web検索)
 次の4点を、なるべく一次情報(会社のIR・決算短信・適時開示、日経・株探・会社四季報オンラインなどの報道)で確認する。
