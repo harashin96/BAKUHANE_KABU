@@ -1,4 +1,4 @@
-"""爆ハネ/暴落の確率モデルを学習して models/jump_model.pkl に保存(月1回くらい実行)
+"""3か月後の期待値モデル(メイン)と爆ハネ/暴落の確率モデル(参考)を学習して models/jump_model.pkl に保存(月1回くらい実行)
 
     python scripts/20_train_jump_model.py
 

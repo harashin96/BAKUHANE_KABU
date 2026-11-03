@@ -1,4 +1,13 @@
-"""爆ハネ(3か月以内に+30%)と暴落(3か月以内に-30%)の確率モデル
+"""3か月後の期待値モデル(メインのランキング) + 爆ハネ(3か月以内に+30%)と暴落(3か月以内に-30%)の確率モデル(参考表示)
+
+メインの並び順(2026-11 から): 「3か月後のリターンが、その日の全対象銘柄の中で何番目くらいになるか(0〜1)」の予測。
+walk-forward 検証(2019〜2026年、毎年それ以前のデータだけで学習):
+- 毎日の上位5銘柄: 全銘柄平均より +2.6%、3か月後に上がっていた割合 58%、-30%以下 3.0%
+  (爆ハネ確率−暴落確率の並び順では +1.8% / 50% / 8.0%。値動きの荒い銘柄が多く、数銘柄に絞る使い方に向かない)
+- 毎月1回 上位5銘柄を3か月持つ: 全銘柄平均より +3.1%(t=1.2)、市場に勝った月 59%
+- 業種を特徴量に加えても改善しなかった
+
+以下は以前の爆ハネ確率モデルの検証:
 
 研究で確かめたこと(2019〜2025年、毎回の上位20銘柄、取っておいた直近1年でも同じ傾向):
 - 「爆ハネ確率 − 暴落確率」の上位は、3か月リターンが全銘柄平均より +2.8%(年換算 +11%)高い。t=1.85
@@ -123,6 +132,8 @@ def make_samples(w: World, step: int = 5, start: str = "2017-08-01") -> pd.DataF
     entry = ao.shift(-1)
     jump = (fut_max / entry - 1) >= JUMP
     crash = (fut_min / entry - 1) <= CRASH
+    fwd = px.shift(-H) / entry - 1          # 翌日の寄り付きで買って3か月後の終値
+    fwd = fwd.where(fwd.abs() < 20)         # 分割の取りこぼしなど、ありえない値は除く
     dates = w.elig.index
     out = []
     for i in range(dates.searchsorted(pd.Timestamp(start)), len(dates) - H - 2, step):
@@ -131,20 +142,21 @@ def make_samples(w: World, step: int = 5, start: str = "2017-08-01") -> pd.DataF
             continue
         X["jump"] = jump.iloc[i].reindex(X.index).to_numpy()
         X["crash"] = crash.iloc[i].reindex(X.index).to_numpy()
+        X["exrank"] = fwd.iloc[i].reindex(X.index).rank(pct=True).to_numpy()   # その日の中での3か月リターンの順位(0〜1)
         X["date"] = dates[i]
         out.append(X)
     return pd.concat(out)
 
 
 def train(samples: pd.DataFrame) -> dict:
-    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
     cols = [c for c in samples.columns if c.startswith("r_")] + RAW
+    P = dict(max_iter=300, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=300, l2_regularization=1.0, random_state=0)
     models = {}
     for tgt in ["jump", "crash"]:
-        clf = HistGradientBoostingClassifier(max_iter=300, learning_rate=0.05, max_leaf_nodes=31,
-                                             min_samples_leaf=300, l2_regularization=1.0, random_state=0)
-        clf.fit(samples[cols], samples[tgt].astype(int))
-        models[tgt] = clf
+        models[tgt] = HistGradientBoostingClassifier(**P).fit(samples[cols], samples[tgt].astype(int))
+    ok = samples.dropna(subset=["exrank"])
+    models["excess"] = HistGradientBoostingRegressor(**P).fit(ok[cols], ok["exrank"])
     return {"models": models, "cols": cols, "trained_until": str(samples["date"].max().date()),
             "n_samples": len(samples), "base_jump": float(samples["jump"].mean()), "base_crash": float(samples["crash"].mean())}
 
@@ -163,14 +175,14 @@ def load_model() -> dict:
 
 
 def score_day(w: World, bundle: dict, i: int = -1) -> pd.DataFrame:
-    """日 i(既定: 最新)の全対象銘柄の 爆ハネ確率・暴落確率・スコア"""
+    """日 i(既定: 最新)の全対象銘柄の 期待スコア(並び順)・爆ハネ確率・暴落確率"""
     i = i if i >= 0 else len(w.elig.index) + i
     X, raw = cross_section(w, i)
     cols = bundle["cols"]
     out = pd.DataFrame(index=X.index)
     out["p_jump"] = bundle["models"]["jump"].predict_proba(X[cols])[:, 1]
     out["p_crash"] = bundle["models"]["crash"].predict_proba(X[cols])[:, 1]
-    out["score"] = out["p_jump"] - out["p_crash"]
+    out["score"] = bundle["models"]["excess"].predict(X[cols])   # 3か月後の順位の予測(0〜1、平均0.5)
     d = w.elig.index[i]
     P = w.P
     out["price"] = w.m.close.loc[d, out.index]

@@ -50,7 +50,7 @@ jobs:
       - name: 予測モデルを学習し直すか判定
         id: train
         run: |
-          if [ ! -f models/jump_model.pkl ] || [ "${{ github.event.inputs.retrain }}" = "true" ] || [ "$(date +%d)" -le "07" -a "$(date +%u)" = "1" ]; then
+          if [ ! -f models/jump_model.pkl ] || ! python -c "import pickle,sys; sys.exit(0 if 'excess' in pickle.load(open('models/jump_model.pkl','rb'))['models'] else 1)" || [ "${{ github.event.inputs.retrain }}" = "true" ] || [ "$(date +%d)" -le "07" -a "$(date +%u)" = "1" ]; then
             echo "do=1" >> "$GITHUB_OUTPUT"; echo "学習し直します"
           else
             echo "do=0" >> "$GITHUB_OUTPUT"

@@ -10,6 +10,7 @@ import pandas as pd
 
 from .config import ROOT
 from .jump import H
+from .research import answer_check, grade_cell, latest_grades, load_research, research_html
 
 log = logging.getLogger("jpstocks")
 REPORTS = ROOT / "reports"
@@ -163,6 +164,8 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
     def sec(c):
         return names["sector33"].get(c, "") if c in names.index else ""
 
+    research = load_research()
+    grades = latest_grades(research, d)
     rows_html = []
     live = []   # 場中の株価更新(scripts/22_live_prices.py)に渡す: 銘柄とランクイン日の株価
     for k, (code, r) in enumerate(top.iterrows(), 1):
@@ -179,11 +182,15 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         since = r["price"] / entry_px - 1
         since_cls = "up" if since > 0 else ("dn" if since < 0 else "")
         stop = entry_px * (1 + stop_loss)
-        live.append({"code": code, "entry_price": round(float(entry_px), 2), "price": round(float(r["price"]), 2)})
-        rows_html.append(f"""<tr class="{'new' if new else ''}" data-code="{code}" data-entry="{entry_px}">
+        live.append({"code": code, "rank": k, "name": str(nm(code)), "sector": str(sec(code)),
+                     "entry_price": round(float(entry_px), 2), "price": round(float(r["price"]), 2)})
+        cx = code in grades.index and grades.loc[code, "grade"] == "C"
+        rows_html.append(f"""<tr class="{'new' if new else ''}{' cx' if cx else ''}" data-code="{code}" data-entry="{entry_px}">
 <td>{k}</td><td>{_links(code)}</td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
-<td class="num"><b>{r['p_jump']*100:.0f}%</b></td><td class="num">{r['p_crash']*100:.0f}%</td>
+{grade_cell(grades, code)}
+<td class="num"><b>{r['score']*100:.0f}</b></td>
+<td class="num">{r['p_jump']*100:.0f}%</td><td class="num">{r['p_crash']*100:.0f}%</td>
 <td>{status}</td>
 <td class="num px">{r['price']:,.0f}</td><td class="num">{cost100/1e4:,.1f}万{afford}</td>
 <td>{ed.date()}<div class="sec">@{entry_px:,.0f}円</div></td>
@@ -268,7 +275,8 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                           f"-30%以下 {(t.ret<=-0.3).mean()*100:.0f}%</p>")
 
     alts = alt_rankings(today, dips)
-    tab_btn = "<button class='tab' data-t='bakuhane'>爆ハネ期待値</button>" + "".join(
+    res_html = research_html(top, grades, answer_check(research, w, H), nm)
+    tab_btn = "<button class='tab' data-t='bakuhane'>3か月期待値</button>" + "".join(
         f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts) + \
         "<button class='tab' data-t='mypage'>マイページ</button>"
     from .mypage import mypage_parts, stocks_json
@@ -297,6 +305,9 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 .mp-form{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}}
 .mp-form input{{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}}
 td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
+.g{{display:inline-block;min-width:18px;text-align:center;border-radius:4px;font-weight:700;font-size:12px;padding:0 4px;cursor:help}}
+.gA{{background:var(--acc);color:#fff}} .gB{{border:1px solid var(--line);color:var(--mut)}} .gC{{background:var(--sell);color:#fff}}
+tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20px}} .why{{white-space:normal;min-width:280px;max-width:520px}}
 .buy{{color:var(--acc);font-weight:700}} .warn{{color:var(--warn);font-size:11px}} .sell{{color:var(--sell);font-weight:700}}
 .tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}}
 .tab{{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}}
@@ -305,18 +316,21 @@ td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
 </style></head><body>
 <h1>爆ハネ期待値ランキング <span style="color:var(--mut);font-weight:400">{d.date()} 終値時点</span></h1>
 <p class="note">作成: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}(平日16:00ごろ自動更新)</p>
-<p class="note">並び順 = 「3か月以内に+30%以上(爆ハネ)の確率」−「3か月以内に-30%以下(暴落)の確率」。全銘柄の平均は 爆ハネ {base_j:.0f}% / 暴落 {base_c:.0f}%。<br>
-<b>使い方</b>: 「買い時(新規ランクイン)」の銘柄を翌営業日の寄り付きで買い、<b>約3か月(63営業日)保有</b>が検証で最も良かった方法です。
-損切り目安({stop_loss*100:.0f}%)は任意: 平均リターンは少し下がるが、大きな損を防ぐ。
-過去の検証(2019〜2025年)では上位20銘柄の3か月リターンが全銘柄平均より約+2.8%高かった一方、1銘柄ずつでは中央値は+1%程度で、3〜4銘柄に1つが大きく跳ねる分布です。<b>数銘柄に分けて買う</b>ことを前提にしてください。投資判断はご自身で。</p>
+<p class="note">並び順 = <b>期待スコア</b>: 3か月後の株価の上がり方が、全対象銘柄の中で何番目くらいになるかの予測(100点満点、平均50点。60点台でも上位の予測です)。
+株価の動き・出来高・割安度・業績の伸びなど30項目から計算。参考として 3か月以内に+30%以上(爆ハネ)/-30%以下(暴落)になる確率も表示(全銘柄の平均は {base_j:.0f}% / {base_c:.0f}%)。<br>
+<b>検証</b>(2019〜2026年、毎年それ以前のデータだけで学習): 毎日の上位5銘柄は3か月後に全銘柄平均より <b>+2.6%</b>、上がっていた割合 <b>58%</b>、-30%以下まで下げたのは3%。
+上位50位までは平均より +1〜1.5%。以前の並び順(爆ハネ確率−暴落確率)より値動きが穏やかな銘柄が多く、+30%以上の大当たりは少なめです。
+差は統計的にはやや弱い(t値1〜2.6)ので、<b>Claudeの定性評価(A/B/C)と組み合わせて絞り込み</b>、3か月(63営業日)保有が基本。損切り目安({stop_loss*100:.0f}%)は任意。投資判断はご自身で。</p>
 {mk_html}
 {pos_html}
 <div class="tabs">{tab_btn}</div>
 <section class="pane" id="tab-bakuhane">
-<p class="note"><b>爆ハネ期待値</b>: 3か月以内に+30%以上の確率 − -30%以下の確率 の高い順(上位{len(top)}銘柄)。「買い時(新規ランクイン)」の翌営業日に買い、約3か月保有。</p>
+{res_html}
+<h2>ランキング(上位{len(top)}銘柄)</h2>
+<p class="note"><b>3か月期待値</b>: 期待スコアの高い順。「Claude」の列は直近の定性評価(A=買い材料あり / B=中立 / C=避けたい。マウスを乗せると理由)。C の行は薄く表示。</p>
 <p class="note" id="live-note" hidden></p>
 <div class="wrap"><table>
-<tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>ランクイン後</th><th>売り時の目安</th><th>損切り目安</th>
+<tr><th>#</th><th>コード</th><th>銘柄</th><th>Claude</th><th>期待スコア</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>ランクイン後</th><th>売り時の目安</th><th>損切り目安</th>
 <th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th><th>出来高(直近/平常)</th><th>年ボラ</th></tr>
 {''.join(rows_html)}
 </table></div>
