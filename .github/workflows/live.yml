@@ -1,0 +1,61 @@
+name: 場中の株価更新
+
+on:
+  schedule:   # 平日の場中(日本時間 9:30・11:00・13:00・14:30)。GitHub側の混雑で遅れることがあります
+    - cron: "30 0 * * 1-5"
+    - cron: "0 2 * * 1-5"
+    - cron: "0 4 * * 1-5"
+    - cron: "30 5 * * 1-5"
+  workflow_dispatch:           # 「Run workflow」ボタンで手動実行
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ranking               # 毎日のランキング作成と同時に公開しない(古いページで上書きしないため)
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+    outputs:
+      ok: ${{ steps.live.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: パッケージをインストール
+        run: pip install yfinance pandas requests
+
+      - name: 公開中のページを取得して、今の株価を live.json に書く
+        id: live
+        run: |
+          if python scripts/22_live_prices.py --site "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" --out site; then
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=0" >> "$GITHUB_OUTPUT"; echo "今回は更新しません"
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.live.outputs.ok == '1'
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    if: needs.update.outputs.ok == '1'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

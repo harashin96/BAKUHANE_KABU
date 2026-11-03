@@ -2,7 +2,7 @@ name: 爆ハネランキング
 
 on:
   schedule:
-    - cron: "30 9 * * 1-5"     # 平日 18:30(日本時間)ごろ。GitHub側の混雑で数十分遅れることがあります
+    - cron: "0 7 * * 1-5"      # 平日 16:00(日本時間)。GitHub側の混雑で遅れることがあります
   workflow_dispatch:           # 「Run workflow」ボタンで手動実行
     inputs:
       retrain:
@@ -89,6 +89,7 @@ jobs:
           mkdir -p site
           cp reports/latest.html site/index.html
           cp reports/stocks.json site/stocks.json
+          cp reports/top.json site/top.json
           cp "$(ls -t reports/ranking_*.csv | head -1)" site/ranking.csv
           touch site/.nojekyll
 

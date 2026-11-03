@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 
 import numpy as np
@@ -163,6 +164,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         return names["sector33"].get(c, "") if c in names.index else ""
 
     rows_html = []
+    live = []   # 場中の株価更新(scripts/22_live_prices.py)に渡す: 銘柄とランクイン日の株価
     for k, (code, r) in enumerate(top.iterrows(), 1):
         new = r["days_in"] == 1
         status = '<span class="buy">買い時(新規ランクイン)</span>' if new else f'継続 {int(r["days_in"])}日目'
@@ -177,14 +179,15 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         since = r["price"] / entry_px - 1
         since_cls = "up" if since > 0 else ("dn" if since < 0 else "")
         stop = entry_px * (1 + stop_loss)
-        rows_html.append(f"""<tr class="{'new' if new else ''}">
+        live.append({"code": code, "entry_price": round(float(entry_px), 2), "price": round(float(r["price"]), 2)})
+        rows_html.append(f"""<tr class="{'new' if new else ''}" data-code="{code}" data-entry="{entry_px}">
 <td>{k}</td><td>{_links(code)}</td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
 <td class="num"><b>{r['p_jump']*100:.0f}%</b></td><td class="num">{r['p_crash']*100:.0f}%</td>
 <td>{status}</td>
-<td class="num">{r['price']:,.0f}</td><td class="num">{cost100/1e4:,.1f}万{afford}</td>
+<td class="num px">{r['price']:,.0f}</td><td class="num">{cost100/1e4:,.1f}万{afford}</td>
 <td>{ed.date()}<div class="sec">@{entry_px:,.0f}円</div></td>
-<td class="num {since_cls}"><b>{since*100:+.1f}%</b><div class="sec">{r['price']-entry_px:+,.0f}円</div></td>
+<td class="num since {since_cls}"><b>{since*100:+.1f}%</b><div class="sec">{r['price']-entry_px:+,.0f}円</div></td>
 <td>{sell_day.date()}</td><td class="num">{stop:,.0f}</td>
 <td class="num">{_fmt(r['PER'])}</td><td class="num">{_fmt(r['PBR'],'{:.2f}')}</td><td class="num">{_fmt(r['DY'],'{:.1f}%')}</td><td class="num">{_fmt(r['NCR'],'{:.2f}')}</td>
 <td class="num">{r['mcap_oku']:,.0f}</td><td class="num">{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class="num">{_fmt(r['HI52'],'{:.0f}')}%</td>
@@ -301,7 +304,7 @@ td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
 .btn{{font:inherit;font-size:13px;padding:5px 12px;border:1px solid var(--acc);border-radius:999px;background:transparent;color:var(--acc);cursor:pointer}} .pane{{display:none}} .pane.on{{display:block}}
 </style></head><body>
 <h1>爆ハネ期待値ランキング <span style="color:var(--mut);font-weight:400">{d.date()} 終値時点</span></h1>
-<p class="note">作成: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}(平日18:30ごろ自動更新)</p>
+<p class="note">作成: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}(平日16:00ごろ自動更新)</p>
 <p class="note">並び順 = 「3か月以内に+30%以上(爆ハネ)の確率」−「3か月以内に-30%以下(暴落)の確率」。全銘柄の平均は 爆ハネ {base_j:.0f}% / 暴落 {base_c:.0f}%。<br>
 <b>使い方</b>: 「買い時(新規ランクイン)」の銘柄を翌営業日の寄り付きで買い、<b>約3か月(63営業日)保有</b>が検証で最も良かった方法です。
 損切り目安({stop_loss*100:.0f}%)は任意: 平均リターンは少し下がるが、大きな損を防ぐ。
@@ -311,6 +314,7 @@ td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
 <div class="tabs">{tab_btn}</div>
 <section class="pane" id="tab-bakuhane">
 <p class="note"><b>爆ハネ期待値</b>: 3か月以内に+30%以上の確率 − -30%以下の確率 の高い順(上位{len(top)}銘柄)。「買い時(新規ランクイン)」の翌営業日に買い、約3か月保有。</p>
+<p class="note" id="live-note" hidden></p>
 <div class="wrap"><table>
 <tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>ランクイン後</th><th>売り時の目安</th><th>損切り目安</th>
 <th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th><th>出来高(直近/平常)</th><th>年ボラ</th></tr>
@@ -334,6 +338,24 @@ td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
   var first=(location.hash||'').slice(1); if(!first){{try{{first=localStorage.getItem('tab')||'';}}catch(e){{}}}}
   show(first||'bakuhane');
 }})();
+// 場中の株価(live.json)があれば、株価と「ランクイン後」だけ差し替える。順位は {d.date()} 終値のまま
+(async function(){{
+  var L; try{{ L = await (await fetch('live.json', {{cache:'no-store'}})).json(); }}catch(e){{ return; }}
+  if(!L || !L.prices || !L.asof || L.asof.slice(0,10) <= '{d.date()}') return;
+  var fmt = function(x){{ return Math.round(x).toLocaleString('ja-JP'); }}, n = 0;
+  document.querySelectorAll('#tab-bakuhane tr[data-code]').forEach(function(tr){{
+    var p = L.prices[tr.dataset.code], e = parseFloat(tr.dataset.entry);
+    if(p == null || !(e > 0)) return;
+    var s = p / e - 1, td = tr.querySelector('td.since');
+    tr.querySelector('td.px').textContent = fmt(p);
+    td.classList.toggle('up', s > 0); td.classList.toggle('dn', s < 0);
+    td.innerHTML = '<b>' + (s >= 0 ? '+' : '') + (s * 100).toFixed(1) + '%</b><div class="sec">' + (p >= e ? '+' : '-') + fmt(Math.abs(p - e)) + '円</div>';
+    n++;
+  }});
+  var note = document.getElementById('live-note');
+  note.innerHTML = '<b>株価・ランクイン後は ' + L.asof.slice(5,10).replace('-','/') + ' ' + L.asof.slice(11,16) + ' 時点</b>(場中・約20分遅れ、' + n + '銘柄)。順位と確率は {d.date()} の終値で計算したもの。';
+  note.hidden = false;
+}})();
 </script>
 {mp_js}
 <p class="note">モデル: {bundle['trained_until']} までのデータで学習(サンプル {bundle['n_samples']:,})。データ: 株価 yfinance、財務 EDINET(提出日以降のみ使用)。金融業は除外、売買代金(20日中央値)3,000万円以上。</p>
@@ -343,6 +365,7 @@ td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
     out.write_text(page, encoding="utf-8")
     (REPORTS / "latest.html").write_text(page, encoding="utf-8")
     (REPORTS / "stocks.json").write_text(stocks_json(today, w, market), encoding="utf-8")
+    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live}, ensure_ascii=False), encoding="utf-8")
     if publish_dir:
         import os
         from pathlib import Path
