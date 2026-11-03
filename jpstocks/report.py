@@ -169,14 +169,22 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         cost100 = r["price"] * 100
         afford = "" if cost100 <= budget else ' <span class="warn">予算超(S株なら可)</span>'
         sell_day = _bday_after(r["entry_date"], H)
-        stop = r["entry_price"] * (1 + stop_loss)
+        # ランクイン日の終値は今の株価データから取り直す(その後に株式分割があっても比べられるように)
+        ed = pd.Timestamp(r["entry_date"])
+        entry_px = w.m.close.at[ed, code] if code in w.m.close.columns and ed in w.m.close.index else np.nan
+        if pd.isna(entry_px):
+            entry_px = r["entry_price"]
+        since = r["price"] / entry_px - 1
+        since_cls = "up" if since > 0 else ("dn" if since < 0 else "")
+        stop = entry_px * (1 + stop_loss)
         rows_html.append(f"""<tr class="{'new' if new else ''}">
 <td>{k}</td><td>{_links(code)}</td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
 <td class="num"><b>{r['p_jump']*100:.0f}%</b></td><td class="num">{r['p_crash']*100:.0f}%</td>
 <td>{status}</td>
 <td class="num">{r['price']:,.0f}</td><td class="num">{cost100/1e4:,.1f}万{afford}</td>
-<td>{pd.Timestamp(r['entry_date']).date()}<div class="sec">@{r['entry_price']:,.0f}円</div></td>
+<td>{ed.date()}<div class="sec">@{entry_px:,.0f}円</div></td>
+<td class="num {since_cls}"><b>{since*100:+.1f}%</b><div class="sec">{r['price']-entry_px:+,.0f}円</div></td>
 <td>{sell_day.date()}</td><td class="num">{stop:,.0f}</td>
 <td class="num">{_fmt(r['PER'])}</td><td class="num">{_fmt(r['PBR'],'{:.2f}')}</td><td class="num">{_fmt(r['DY'],'{:.1f}%')}</td><td class="num">{_fmt(r['NCR'],'{:.2f}')}</td>
 <td class="num">{r['mcap_oku']:,.0f}</td><td class="num">{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class="num">{_fmt(r['HI52'],'{:.0f}')}%</td>
@@ -285,6 +293,7 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 .del{{font:inherit;font-size:12px;border:1px solid var(--line);background:transparent;color:var(--mut);border-radius:6px;cursor:pointer}}
 .mp-form{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}}
 .mp-form input{{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}}
+td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
 .buy{{color:var(--acc);font-weight:700}} .warn{{color:var(--warn);font-size:11px}} .sell{{color:var(--sell);font-weight:700}}
 .tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}}
 .tab{{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}}
@@ -303,7 +312,7 @@ td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:15
 <section class="pane" id="tab-bakuhane">
 <p class="note"><b>爆ハネ期待値</b>: 3か月以内に+30%以上の確率 − -30%以下の確率 の高い順(上位{len(top)}銘柄)。「買い時(新規ランクイン)」の翌営業日に買い、約3か月保有。</p>
 <div class="wrap"><table>
-<tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>売り時の目安</th><th>損切り目安</th>
+<tr><th>#</th><th>コード</th><th>銘柄</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>ランクイン後</th><th>売り時の目安</th><th>損切り目安</th>
 <th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>時価総額(億)</th><th>1か月</th><th>52週高値比</th><th>出来高(直近/平常)</th><th>年ボラ</th></tr>
 {''.join(rows_html)}
 </table></div>
