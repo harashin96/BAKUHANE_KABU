@@ -4,7 +4,7 @@
 
 inbox.json は次の形のリスト(1銘柄1件):
     [{"code": "1234", "name": "...", "rank": 1, "price": 1234,
-      "grade": "A", "confidence": "中", "summary": "一言の理由",
+      "grade": "A", "confidence": "中", "drop": "巻き込まれ", "summary": "一言の理由",
       "good": "買い材料", "risk": "リスク", "sources": "URL; URL"}]
 date は省略すると今日。同じ日・同じ銘柄は上書き。
 """
@@ -15,13 +15,14 @@ from datetime import date
 import _bootstrap  # noqa: F401
 import pandas as pd
 
-from jpstocks.research import COLUMNS, RESEARCH
+from jpstocks.research import COLUMNS, DROP, RESEARCH
 
 src = sys.argv[1]
 items = json.loads(open(src, encoding="utf-8").read())
-bad = [x.get("code") for x in items if x.get("grade") not in ("A", "B", "C") or x.get("confidence") not in ("高", "中", "低")]
+bad = [x.get("code") for x in items if x.get("grade") not in ("A", "B", "C") or x.get("confidence") not in ("高", "中", "低")
+       or x.get("drop") not in DROP]
 if bad:
-    raise SystemExit(f"grade は A/B/C、confidence は 高/中/低 にしてください: {bad}")
+    raise SystemExit(f"grade は A/B/C、confidence は 高/中/低、drop は {'/'.join(DROP)} にしてください: {bad}")
 new = pd.DataFrame(items)
 new["date"] = new.get("date", pd.Series(dtype=str)).fillna(str(date.today())) if "date" in new else str(date.today())
 new["code"] = new["code"].astype(str)

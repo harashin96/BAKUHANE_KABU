@@ -130,8 +130,9 @@ def alt_rankings(today: pd.DataFrame, dips: pd.DataFrame | None = None) -> list:
                 "検証では市場平均より年+2〜4%程度と効果は弱め(t≈1)。配当を受け取りたい人向けの参考。", dy))
     if dips is not None:
         out.append(("dip", f"巻き添え安({len(dips)})",
-                    "<b>相場に引きずられて下がった優良株</b>: 黒字・割安度が上位30%・決算発表から20営業日以上(業績悪化による下げではない)・"
-                    "直近1か月で市場全体以上に下落。並び順はランキングの点数。<b>相場のお得度が「押し目」以上のとき</b>に買う候補(平常時の上乗せは小さい)。", dips))
+                    "<b>相場に引きずられて下がった(と推測される)優良株</b>: 黒字(直近の有報・半期報告書)・割安度が上位30%・最後の有報/半期報告書から20営業日以上・"
+                    "直近1か月で市場全体以上に下落。並び順はランキングの点数(上位15銘柄)。"
+                    "<br><b>注意</b>: 下げた理由(悪い材料があるか)は見ていません。決算短信・業績予想の修正・増資・不祥事などは使っているデータ(EDINETの有価証券報告書・半期報告書)に入っていないため、<b>個別の悪材料で下げた銘柄も混ざります</b>。条件を満たす銘柄全体では、検証(2019〜2026年)で3か月後に全銘柄平均より +1.7%(t=3.8、8年中7年プラス)。相場のお得度に関係なく効いていました(お得度が高い時は市場全体が上がりやすいだけ)。", dips))
     return out
 
 
@@ -156,7 +157,7 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
 
 def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundle: dict, track: pd.DataFrame | None,
                  budget: float, stop_loss: float, publish_dir: str = "", market: dict | None = None,
-                 dips: pd.DataFrame | None = None) -> str:
+                 dips: pd.DataFrame | None = None, focus: pd.DataFrame | None = None) -> str:
     d = pd.Timestamp(today["date"].iloc[0])
     names = w.universe.set_index(w.universe["code"].astype(str))
     def nm(c):
@@ -184,7 +185,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         stop = entry_px * (1 + stop_loss)
         live.append({"code": code, "rank": k, "name": str(nm(code)), "sector": str(sec(code)),
                      "entry_price": round(float(entry_px), 2), "price": round(float(r["price"]), 2)})
-        cx = code in grades.index and grades.loc[code, "grade"] == "C"
+        cx = code in grades.index and (grades.loc[code, "grade"] == "C" or grades.loc[code].get("drop") == "個別の悪材料")
         rows_html.append(f"""<tr class="{'new' if new else ''}{' cx' if cx else ''}" data-code="{code}" data-entry="{entry_px}">
 <td>{k}</td><td>{_links(code)}</td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
@@ -228,9 +229,9 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                             f"<td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                             f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
                             f"<td class='num'>{_fmt(r['DY'],'{:.1f}%')}</td><td class='num'>{_fmt(r['NCR'],'{:.2f}')}</td><td class='num'>{int(r['AGE'])}</td></tr>")
-            body = (f"<p class='note'><b>相場に引きずられて下がった優良株</b>(黒字・割安度が上位30%・決算発表から20営業日以上=業績の悪化による下げではない・"
+            body = (f"<p class='note'><b>相場に引きずられて下がった(と推測される)優良株</b>(黒字・割安度が上位30%・最後の有報/半期報告書から20営業日以上・"
                     f"直近1か月で市場全体({market['r20']*100:+.1f}%)以上に下落)。並び順はランキングの点数。"
-                    "お得度が「押し目」以上のときに、ランキング上位とあわせて買う候補。</p>"
+                    "<br><b>注意</b>: 下げた理由(悪い材料があるか)は見ていません。決算短信・業績予想の修正・増資・不祥事などは使っているデータ(EDINETの有価証券報告書・半期報告書)に入っていないため、<b>個別の悪材料で下げた銘柄も混ざります</b>。条件を満たす銘柄全体では、検証(2019〜2026年)で3か月後に全銘柄平均より +1.7%(t=3.8、8年中7年プラス)。相場のお得度に関係なく効いていました(お得度が高い時は市場全体が上がりやすいだけ)。</p>"
                     "<div class='wrap'><table><tr><th>コード</th><th>銘柄</th><th>1か月</th><th>爆ハネ確率</th><th>暴落確率</th><th>株価</th><th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>決算から(営業日)</th></tr>"
                     + "".join(drow) + "</table></div>")
             if market["level"] in ("大チャンス", "買い場", "押し目"):
@@ -275,7 +276,10 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                           f"-30%以下 {(t.ret<=-0.3).mean()*100:.0f}%</p>")
 
     alts = alt_rankings(today, dips)
-    res_html = research_html(top, grades, answer_check(research, w, H), nm)
+    rank = {c: k for k, c in enumerate(today.index, 1)}
+    res_html = research_html(top, grades, answer_check(research, w, H), nm, focus, rank_of=rank.get)
+    cands = [] if focus is None else [{"code": c, "rank": rank[c], "name": str(nm(c)), "sector": str(sec(c)), "price": round(float(r["price"]), 2),
+                                       "ret1m_pct": round(float(r["RET1M"]), 1)} for c, r in focus.iterrows()]
     tab_btn = "<button class='tab' data-t='bakuhane'>3か月期待値</button>" + "".join(
         f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts) + \
         "<button class='tab' data-t='mypage'>マイページ</button>"
@@ -327,7 +331,7 @@ tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20
 <section class="pane" id="tab-bakuhane">
 {res_html}
 <h2>ランキング(上位{len(top)}銘柄)</h2>
-<p class="note"><b>3か月期待値</b>: 期待スコアの高い順。「Claude」の列は直近の定性評価(A=買い材料あり / B=中立 / C=避けたい。マウスを乗せると理由)。C の行は薄く表示。</p>
+<p class="note"><b>3か月期待値</b>: 期待スコアの高い順。「Claude」の列は直近の定性評価(A=買い材料あり / B=中立 / C=避けたい。マウスを乗せると理由)。C と「個別の悪材料」の行は薄く表示。</p>
 <p class="note" id="live-note" hidden></p>
 <div class="wrap"><table>
 <tr><th>#</th><th>コード</th><th>銘柄</th><th>Claude</th><th>期待スコア</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>ランクイン後</th><th>売り時の目安</th><th>損切り目安</th>
@@ -379,7 +383,7 @@ tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20
     out.write_text(page, encoding="utf-8")
     (REPORTS / "latest.html").write_text(page, encoding="utf-8")
     (REPORTS / "stocks.json").write_text(stocks_json(today, w, market), encoding="utf-8")
-    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live}, ensure_ascii=False), encoding="utf-8")
+    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live, "candidates": cands}, ensure_ascii=False), encoding="utf-8")
     if publish_dir:
         import os
         from pathlib import Path

@@ -14,7 +14,8 @@ import pandas as pd
 from .config import ROOT
 
 RESEARCH = ROOT / "research" / "qualitative.csv"
-COLUMNS = ["date", "code", "name", "rank", "price", "grade", "confidence", "summary", "good", "risk", "sources"]
+COLUMNS = ["date", "code", "name", "rank", "price", "grade", "confidence", "drop", "summary", "good", "risk", "sources"]
+DROP = ["巻き込まれ", "個別の悪材料", "理由不明", "下げていない"]   # 直近の下げの理由
 FRESH_DAYS = 35          # この日数より古い調査は「今の評価」として使わない
 GRADE_NAME = {"A": "A 買い材料あり", "B": "B 中立", "C": "C 避けたい"}
 
@@ -56,6 +57,10 @@ def answer_check(r: pd.DataFrame | None, w, H: int) -> pd.DataFrame | None:
     return pd.DataFrame(rows) if rows else None
 
 
+def _f(x, f="{:.1f}"):
+    return "−" if pd.isna(x) else f.format(x)
+
+
 def grade_cell(g: pd.DataFrame, code: str) -> str:
     if code not in g.index:
         return "<td class='gr'>−</td>"
@@ -64,33 +69,54 @@ def grade_cell(g: pd.DataFrame, code: str) -> str:
     return f"<td class='gr'><span class='g g{x['grade']}' title='{tip}'>{x['grade']}</span></td>"
 
 
-def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None, nm) -> str:
-    """絞り込み候補(ランキング上位 × Claude評価) + 調査の詳細 + 答え合わせ"""
-    out = []
-    inr = [c for c in top.index if c in g.index]
-    picks = [c for c in inr if g.loc[c, "grade"] == "A"]
-    out.append("<h2>絞り込み候補(ランキング × Claudeの定性評価)</h2>")
-    if not inr:
-        out.append("<p class='note'>まだ定性調査の結果がありません。週1回、ランキング上位10銘柄ほどを Claude が調べて A/B/C を付けます。</p>")
-        return "".join(out)
-    if picks:
-        items = "".join(f"<li><b>{list(top.index).index(c)+1}位 {c} {html.escape(str(nm(c)))}</b> "
-                        f"<span class='g gA'>A</span> 確信度 {html.escape(str(g.loc[c, 'confidence']))} — {html.escape(str(g.loc[c, 'summary']))}</li>"
-                        for c in picks)
-        out.append(f"<ul class='picks'>{items}</ul>")
+def final_picks(focus: pd.DataFrame, g: pd.DataFrame, n: int = 5) -> list:
+    """候補から最終候補を選ぶ: C と「個別の悪材料」は外し、A を先に、残りは期待スコア順"""
+    def ok(c):
+        return c not in g.index or (g.loc[c, "grade"] != "C" and g.loc[c].get("drop") != "個別の悪材料")
+    cs = [c for c in focus.index if ok(c)]
+    return sorted(cs, key=lambda c: (0 if c in g.index and g.loc[c, "grade"] == "A" else 1, list(focus.index).index(c)))[:n]
+
+
+def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None, nm, focus: pd.DataFrame | None = None,
+                  rank_of=None) -> str:
+    """最終候補(ランキング × 巻き添え安 × Claude評価) + 候補一覧 + 調査の詳細 + 答え合わせ"""
+    out = ["<h2>最終候補(3〜5銘柄)</h2>"]
+    rank_of = rank_of or (lambda c: list(top.index).index(c) + 1)
+    def gr(c):
+        return f"<span class='g g{g.loc[c, 'grade']}'>{g.loc[c, 'grade']}</span>" if c in g.index else "<span class='g gB'>未</span>"
+    def dr(c):
+        return html.escape(str(g.loc[c].get("drop", ""))) if c in g.index and pd.notna(g.loc[c].get("drop")) else "未調査"
+    if focus is None or not len(focus):
+        out.append("<p class='note'>今日は「ランキング60位以内 かつ 巻き添え安の条件」を満たす銘柄がありません。ランキング上位から、Claude の評価が A の銘柄を優先してください。</p>")
     else:
-        out.append("<p class='note'>今のランキングに A 評価の銘柄はありません(B の上位から選ぶか、次の調査を待つ)。</p>")
-    out.append("<p class='note'>組み合わせ方: ランキング上位のうち <b>A を優先、C は外す</b>。B は順位どおり。"
-               "評価は Claude がWeb上の決算・ニュース・業界動向を読んで付けたもので、検証済みの数字ではありません。下の答え合わせで効き目を確かめていきます。投資判断はご自身で。</p>")
+        picks = final_picks(focus, g)
+        items = "".join(f"<li><b>{rank_of(c)}位 {c} {html.escape(str(nm(c)))}</b> {gr(c)} "
+                        + (f"確信度 {html.escape(str(g.loc[c, 'confidence']))} / 下げた理由: {dr(c)} — {html.escape(str(g.loc[c, 'summary']))}" if c in g.index else "まだ調査していません")
+                        + "</li>" for c in picks)
+        out.append(f"<ol class='picks'>{items}</ol>")
+        out.append("<p class='note'><b>選び方</b>: ①ランキング(期待スコア)60位以内 ②巻き添え安の条件(黒字・割安度が上位30%・直近1か月で市場以上に下落など) "
+                   "③ Claude の調査で C(避けたい)と「個別の悪材料で下げた」を外し、A を優先、残りは期待スコア順。"
+                   "①②の検証(2019〜2026年): 上位5銘柄は3か月後に全銘柄平均より <b>+3.1%</b>、上がっていた割合 <b>65%</b>、-30%以下 0.8%。2026年はマイナス(-2%)。"
+                   "③の Claude の評価は検証済みではありません(下の答え合わせで確かめていきます)。翌営業日の寄り付きで買い、約3か月保有。投資判断はご自身で。</p>")
+        crow = "".join(f"<tr><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td><td>{gr(c)}</td><td>{dr(c)}</td>"
+                       f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td><td class='num'>{_f(r['NCR'], '{:.2f}')}</td></tr>"
+                       for c, r in focus.iterrows())
+        out.append(f"<details><summary class='note'>候補 {len(focus)} 銘柄(ランキング60位以内 × 巻き添え安の条件)</summary><div class='wrap'><table>"
+                   "<tr><th>順位</th><th>コード</th><th>銘柄</th><th>Claude</th><th>下げた理由</th><th>期待スコア</th><th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th></tr>"
+                   + crow + "</table></div></details>")
+    inr = [c for c in g.index if c in top.index or (focus is not None and c in focus.index)]
+    if not inr:
+        out.append("<p class='note'>まだ定性調査の結果がありません。週1回、Claude が候補を調べて A/B/C と下げた理由を付けます。</p>")
+        return "".join(out)
     rows = []
     for c in inr:
         x = g.loc[c]
-        rows.append(f"<tr><td>{list(top.index).index(c)+1}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td>"
-                    f"<td><span class='g g{x['grade']}'>{x['grade']}</span></td><td>{html.escape(str(x['confidence']))}</td>"
+        rows.append(f"<tr><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td>"
+                    f"<td><span class='g g{x['grade']}'>{x['grade']}</span></td><td>{html.escape(str(x['confidence']))}</td><td>{dr(c)}</td>"
                     f"<td>{x['date']:%m/%d}</td><td class='why'>{html.escape(str(x['summary']))}"
                     f"<div class='sec'>＋ {html.escape(str(x['good']))}<br>− {html.escape(str(x['risk']))}</div></td></tr>")
     out.append("<details><summary class='note'>調査の詳細(クリックで開く)</summary><div class='wrap'><table>"
-               "<tr><th>順位</th><th>コード</th><th>銘柄</th><th>評価</th><th>確信度</th><th>調査日</th><th>理由</th></tr>"
+               "<tr><th>順位</th><th>コード</th><th>銘柄</th><th>評価</th><th>確信度</th><th>下げた理由</th><th>調査日</th><th>理由</th></tr>"
                + "".join(rows) + "</table></div></details>")
     if check is not None and len(check):
         t = check.dropna(subset=["ret"])
