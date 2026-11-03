@@ -282,3 +282,11 @@ def focus_candidates(today: pd.DataFrame, status: dict, top: int = 60) -> pd.Dat
     5銘柄を3か月ずつ回す運用で年率 +21%(ランキング上位だけ +17%、市場 +11%、手数料込み)。2026年は -2%。"""
     t = today.head(top)
     return t[_dip_mask(t, status)]
+
+
+def kiyohara_candidates(today: pd.DataFrame) -> pd.DataFrame:
+    """長期保有の候補 = 清原式(ネットキャッシュ比率1以上の黒字企業)を期待スコアの高い順に
+
+    walk-forward 検証(2019〜2025年、上位5銘柄): 全銘柄平均より 3か月 +3.5% / 1年 +12.5%(t=2.5、上がっていた割合78%) / 2年 +38%。
+    割安度の順で上位5銘柄にすると 1年 +7.7%(t=1.3)。巻き添え安の条件を重ねると悪くなる(1年 +8.5%)。"""
+    return today[(today["NCR"] >= 1) & (today["PER"] > 0)]

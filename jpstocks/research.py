@@ -77,34 +77,46 @@ def final_picks(focus: pd.DataFrame, g: pd.DataFrame, n: int = 5) -> list:
     return sorted(cs, key=lambda c: (0 if c in g.index and g.loc[c, "grade"] == "A" else 1, list(focus.index).index(c)))[:n]
 
 
+SHORT_NOTE = ("<b>選び方</b>: ①ランキング(期待スコア)60位以内 ②巻き添え安の条件(黒字・割安度が上位30%・直近1か月で市場以上に下落など) "
+              "③ Claude の調査で C(避けたい)と「個別の悪材料で下げた」を外し、A を優先、残りは期待スコア順。"
+              "①②の検証(2019〜2026年): 上位5銘柄は3か月後に全銘柄平均より <b>+3.1%</b>、上がっていた割合 <b>65%</b>、-30%以下 0.8%。2026年はマイナス(-2%)。"
+              "翌営業日の寄り付きで買い、<b>約3か月保有</b>。")
+LONG_NOTE = ("<b>選び方</b>: ①清原式(ネットキャッシュ比率1以上の黒字企業) ②期待スコアの高い順 ③ Claude の評価で C と「個別の悪材料」を外し、A を優先。"
+             "①②の検証(2019〜2025年、5銘柄): 全銘柄平均より 1年後 <b>+12.5%</b>(上がっていた割合 78%、7年中6年で上回る)、2年後 <b>+38%</b>。"
+             "途中で-50%以下まで下げたのは0.7%。<b>1年以上の保有</b>が前提。検証期間は割安株・PBR改善の追い風が強かった時期なので、同じ成績が続くとは限りません。")
+
+
+def _picks_block(title, focus, g, nm, rank_of, note, empty, label, gr, dr) -> list:
+    out = [f"<h2>{title}</h2>"]
+    if focus is None or not len(focus):
+        return out + [f"<p class='note'>{empty}</p>"]
+    items = "".join(f"<li><b>{rank_of(c)}位 {c} {html.escape(str(nm(c)))}</b> {gr(c)} "
+                    + (f"確信度 {html.escape(str(g.loc[c, 'confidence']))} / 下げた理由: {dr(c)} — {html.escape(str(g.loc[c, 'summary']))}" if c in g.index else "まだ調査していません")
+                    + "</li>" for c in final_picks(focus, g))
+    crow = "".join(f"<tr><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td><td>{gr(c)}</td><td>{dr(c)}</td>"
+                   f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td><td class='num'>{_f(r['NCR'], '{:.2f}')}</td></tr>"
+                   for c, r in focus.iterrows())
+    return out + [f"<ol class='picks'>{items}</ol>", f"<p class='note'>{note}"
+                  "Claude の評価は検証済みではありません(下の答え合わせで確かめていきます)。投資判断はご自身で。</p>",
+                  f"<details><summary class='note'>候補 {len(focus)} 銘柄({label})</summary><div class='wrap'><table>"
+                  "<tr><th>順位</th><th>コード</th><th>銘柄</th><th>Claude</th><th>下げた理由</th><th>期待スコア</th><th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th></tr>"
+                  + crow + "</table></div></details>"]
+
+
 def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None, nm, focus: pd.DataFrame | None = None,
-                  rank_of=None) -> str:
-    """最終候補(ランキング × 巻き添え安 × Claude評価) + 候補一覧 + 調査の詳細 + 答え合わせ"""
-    out = ["<h2>最終候補(3〜5銘柄)</h2>"]
+                  rank_of=None, long: pd.DataFrame | None = None) -> str:
+    """最終候補(3か月: ランキング × 巻き添え安 / 長期: 清原式 × 期待スコア)× Claude評価 + 候補一覧 + 調査の詳細 + 答え合わせ"""
     rank_of = rank_of or (lambda c: list(top.index).index(c) + 1)
     def gr(c):
         return f"<span class='g g{g.loc[c, 'grade']}'>{g.loc[c, 'grade']}</span>" if c in g.index else "<span class='g gB'>未</span>"
     def dr(c):
         return html.escape(str(g.loc[c].get("drop", ""))) if c in g.index and pd.notna(g.loc[c].get("drop")) else "未調査"
-    if focus is None or not len(focus):
-        out.append("<p class='note'>今日は「ランキング60位以内 かつ 巻き添え安の条件」を満たす銘柄がありません。ランキング上位から、Claude の評価が A の銘柄を優先してください。</p>")
-    else:
-        picks = final_picks(focus, g)
-        items = "".join(f"<li><b>{rank_of(c)}位 {c} {html.escape(str(nm(c)))}</b> {gr(c)} "
-                        + (f"確信度 {html.escape(str(g.loc[c, 'confidence']))} / 下げた理由: {dr(c)} — {html.escape(str(g.loc[c, 'summary']))}" if c in g.index else "まだ調査していません")
-                        + "</li>" for c in picks)
-        out.append(f"<ol class='picks'>{items}</ol>")
-        out.append("<p class='note'><b>選び方</b>: ①ランキング(期待スコア)60位以内 ②巻き添え安の条件(黒字・割安度が上位30%・直近1か月で市場以上に下落など) "
-                   "③ Claude の調査で C(避けたい)と「個別の悪材料で下げた」を外し、A を優先、残りは期待スコア順。"
-                   "①②の検証(2019〜2026年): 上位5銘柄は3か月後に全銘柄平均より <b>+3.1%</b>、上がっていた割合 <b>65%</b>、-30%以下 0.8%。2026年はマイナス(-2%)。"
-                   "③の Claude の評価は検証済みではありません(下の答え合わせで確かめていきます)。翌営業日の寄り付きで買い、約3か月保有。投資判断はご自身で。</p>")
-        crow = "".join(f"<tr><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td><td>{gr(c)}</td><td>{dr(c)}</td>"
-                       f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td><td class='num'>{_f(r['NCR'], '{:.2f}')}</td></tr>"
-                       for c, r in focus.iterrows())
-        out.append(f"<details><summary class='note'>候補 {len(focus)} 銘柄(ランキング60位以内 × 巻き添え安の条件)</summary><div class='wrap'><table>"
-                   "<tr><th>順位</th><th>コード</th><th>銘柄</th><th>Claude</th><th>下げた理由</th><th>期待スコア</th><th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th></tr>"
-                   + crow + "</table></div></details>")
-    inr = [c for c in g.index if c in top.index or (focus is not None and c in focus.index)]
+    out = _picks_block("最終候補: 3か月保有(3〜5銘柄)", focus, g, nm, rank_of, SHORT_NOTE,
+                       "今日は「ランキング60位以内 かつ 巻き添え安の条件」を満たす銘柄がありません。ランキング上位から、Claude の評価が A の銘柄を優先してください。",
+                       "ランキング60位以内 × 巻き添え安の条件", gr, dr)
+    out += _picks_block("最終候補: 長期保有(1年以上・清原式 × 期待スコア)", long, g, nm, rank_of, LONG_NOTE,
+                        "今日は清原式の条件を満たす銘柄がありません。", "清原式の条件を満たす銘柄、期待スコア順", gr, dr)
+    inr = [c for c in g.index if c in top.index or any(x is not None and c in x.index for x in (focus, long))]
     if not inr:
         out.append("<p class='note'>まだ定性調査の結果がありません。週1回、Claude が候補を調べて A/B/C と下げた理由を付けます。</p>")
         return "".join(out)

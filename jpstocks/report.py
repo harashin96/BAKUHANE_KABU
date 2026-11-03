@@ -115,6 +115,7 @@ def alt_rankings(today: pd.DataFrame, dips: pd.DataFrame | None = None) -> list:
                 "<b>清原基準</b>: ネットキャッシュ比率(流動資産+投資有価証券×70%−負債)÷時価総額 が<b>1以上</b>の黒字企業。並び順は「ネットキャッシュ比率と低PERの順位」の平均。"
                 "検証(2017〜2025年): 該当銘柄を全部均等に持つと市場平均より<b>年+10%</b>(t=3.9)、直近1年も+8%。"
                 "1〜3銘柄に絞ると成績は運しだいになるので、<b>できるだけ多くの銘柄に分けて</b>(S株なら少額で可)、3か月〜半年ごとに見直すのが検証どおりの使い方。"
+                "<b>5銘柄に絞るなら</b>、この並び順(割安度)より期待スコアの順のほうが検証で良かった(1年後 +12.5% 対 +7.7%)→ 「3か月期待値」タブの「最終候補: 長期保有」。"
                 "<br>注意: 不動産・建設などは流動資産に「販売用不動産」「未成工事支出金」が多く含まれ、現金ではないのに比率が高く出やすい(実際より割安に見える)。", k))
     v = t[prof].copy()
     for c, asc in [("NCR", True), ("PER", False), ("PBR", False), ("DY", True)]:
@@ -157,7 +158,7 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
 
 def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundle: dict, track: pd.DataFrame | None,
                  budget: float, stop_loss: float, publish_dir: str = "", market: dict | None = None,
-                 dips: pd.DataFrame | None = None, focus: pd.DataFrame | None = None) -> str:
+                 dips: pd.DataFrame | None = None, focus: pd.DataFrame | None = None, long: pd.DataFrame | None = None) -> str:
     d = pd.Timestamp(today["date"].iloc[0])
     names = w.universe.set_index(w.universe["code"].astype(str))
     def nm(c):
@@ -277,9 +278,11 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 
     alts = alt_rankings(today, dips)
     rank = {c: k for k, c in enumerate(today.index, 1)}
-    res_html = research_html(top, grades, answer_check(research, w, H), nm, focus, rank_of=rank.get)
-    cands = [] if focus is None else [{"code": c, "rank": rank[c], "name": str(nm(c)), "sector": str(sec(c)), "price": round(float(r["price"]), 2),
-                                       "ret1m_pct": round(float(r["RET1M"]), 1)} for c, r in focus.iterrows()]
+    res_html = research_html(top, grades, answer_check(research, w, H), nm, focus, rank_of=rank.get, long=long)
+    def cl(df):
+        return [] if df is None else [{"code": c, "rank": rank[c], "name": str(nm(c)), "sector": str(sec(c)), "price": round(float(r["price"]), 2),
+                                       "ret1m_pct": round(float(r["RET1M"]), 1)} for c, r in df.iterrows()]
+    cands, long_cands = cl(focus), cl(None if long is None else long.head(15))
     tab_btn = "<button class='tab' data-t='bakuhane'>3か月期待値</button>" + "".join(
         f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts) + \
         "<button class='tab' data-t='mypage'>マイページ</button>"
@@ -383,7 +386,7 @@ tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20
     out.write_text(page, encoding="utf-8")
     (REPORTS / "latest.html").write_text(page, encoding="utf-8")
     (REPORTS / "stocks.json").write_text(stocks_json(today, w, market), encoding="utf-8")
-    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live, "candidates": cands}, ensure_ascii=False), encoding="utf-8")
+    (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live, "candidates": cands, "long_candidates": long_cands}, ensure_ascii=False), encoding="utf-8")
     if publish_dir:
         import os
         from pathlib import Path
