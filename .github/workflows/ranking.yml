@@ -3,6 +3,9 @@ name: 爆ハネランキング
 on:
   schedule:
     - cron: "0 7 * * 1-5"      # 平日 16:00(日本時間)。GitHub側の混雑で遅れることがあります
+  push:                        # 毎朝の定性調査(Claude)の結果が push されたら、ページを作り直して「Claude」の列に反映
+    branches: [main]
+    paths: [research/qualitative.csv]
   workflow_dispatch:           # 「Run workflow」ボタンで手動実行
     inputs:
       retrain:
