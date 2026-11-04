@@ -78,16 +78,76 @@ def _yf():
     return yf
 
 
+def _blank(d: pd.DataFrame, idx, since) -> np.ndarray:
+    """株価が空なのに出来高がある直近の行(休日や上場前後の空行は含めない)"""
+    return (d["Close"].isna() & (d["Volume"].fillna(0) > 0)).to_numpy() & (idx >= since)
+
+
+def _fill_from_intraday(yf, frames: dict[str, pd.DataFrame], days: int = 30) -> None:
+    """日足の行はあるのに株価が空(Yahoo 側の更新遅れ。出来高だけ入っていることが多い)の直近の日を、1時間足から作って埋める
+
+    始値=最初の足の始値 / 高値・安値=1日の最大・最小 / 終値=最後の足の終値。調整後終値は、その後の日の調整比率(なければ1)を掛ける。
+    後で Yahoo の日足が埋まれば、次回の更新(直近10日分の取り直し)で正式な値に置き換わる
+    """
+    since = pd.Timestamp.now().normalize() - pd.Timedelta(days=days)
+    need = {}
+    for t, d in frames.items():
+        idx = d.index.tz_localize(None) if d.index.tz is not None else d.index
+        blank = _blank(d, idx, since)
+        if blank.any():
+            need[t] = idx[blank].min()
+    if not need:
+        return
+    try:
+        intra = yf.download(list(need), start=min(need.values()).strftime("%Y-%m-%d"), interval="60m", auto_adjust=False,
+                            group_by="ticker", threads=False, progress=False)
+    except Exception as e:
+        log.warning(f"1時間足の取得に失敗(空の日足は埋めずに進めます): {e}")
+        return
+    filled = 0
+    for t in need:
+        try:
+            h = intra[t] if isinstance(intra.columns, pd.MultiIndex) else intra
+        except KeyError:
+            continue
+        h = h.dropna(subset=["Close"])
+        if h.empty:
+            continue
+        hi = h.index.tz_convert("Asia/Tokyo").tz_localize(None) if h.index.tz is not None else h.index
+        day = h.groupby(hi.normalize()).agg(Open=("Open", "first"), High=("High", "max"), Low=("Low", "min"),
+                                            Close=("Close", "last"), Volume=("Volume", "sum"))
+        d = frames[t]
+        idx = d.index.tz_localize(None) if d.index.tz is not None else d.index
+        ratio = (d["Adj Close"] / d["Close"]).to_numpy()
+        for k in np.where(_blank(d, idx, since))[0]:
+            dt = idx[k].normalize()
+            if dt not in day.index:
+                continue
+            x = day.loc[dt]
+            later = ratio[k + 1:][~np.isnan(ratio[k + 1:])]
+            for c in ["Open", "High", "Low", "Close"]:
+                d.iloc[k, d.columns.get_loc(c)] = x[c]
+            d.iloc[k, d.columns.get_loc("Adj Close")] = x["Close"] * (later[0] if len(later) else 1.0)
+            if pd.isna(d["Volume"].iat[k]) or d["Volume"].iat[k] == 0:
+                d.iloc[k, d.columns.get_loc("Volume")] = x["Volume"]
+            filled += 1
+    if filled:
+        log.info(f"日足が空だった {filled} 件(銘柄×日)を1時間足で補いました")
+
+
 def _download_chunk(tickers: list[str], start: str, threads: bool = True, splits_out: list | None = None) -> pd.DataFrame:
     yf = _yf()
     raw = yf.download(tickers, start=start, auto_adjust=False, actions=splits_out is not None, group_by="ticker",
                       threads=threads, progress=False)
-    rows = []
+    frames = {}
     for t in tickers:
         try:
-            d = raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw
+            frames[t] = (raw[t] if isinstance(raw.columns, pd.MultiIndex) else raw).copy()
         except KeyError:
             continue
+    _fill_from_intraday(yf, frames)
+    rows = []
+    for t, d in frames.items():
         d = d.dropna(subset=["Close"])
         if d.empty:
             continue
