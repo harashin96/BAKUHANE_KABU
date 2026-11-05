@@ -95,7 +95,10 @@ tr.det td{background:var(--soft);white-space:normal}
 @media (min-width:721px){table.dt.core .popt{display:none}}
 /* 横にスクロールしても銘柄名は左に残す */
 table.dt .stick{position:sticky;left:0;z-index:1;background:var(--card);box-shadow:1px 0 0 var(--line)}
-table.dt th.stick{z-index:2} table.dt tr.new td.stick{background:var(--hl)} table.dt tr:hover td.stick{background:var(--soft)}
+table.dt th.stick{z-index:3}
+/* 行の多い表は、画面の高さに収まる枠の中でスクロールし、見出しの行を上に残す */
+.wrap.tall{max-height:calc(100vh - 150px);max-height:calc(100svh - 150px);overflow:auto}
+.wrap.tall th{z-index:2} table.dt tr.new td.stick{background:var(--hl)} table.dt tr:hover td.stick{background:var(--soft)}
 /* スマホ */
 @media (max-width:720px){
   main{padding:0 12px 70px} .top-in{padding:8px 12px 0} .tabs{padding:6px 12px 8px}
@@ -202,6 +205,7 @@ SCRIPT = r"""
         + (heads.length > 8 ? '<span class="seg"><button class="on" data-c="all">全部の列</button><button data-c="core">主要な列だけ</button></span>'
            + '<span class="hint">表は横にスクロールできます。「主要な列だけ」では行を押すと残りが開きます</span>' : '');
       var wrap = table.closest('.wrap') || table; wrap.parentNode.insertBefore(box, wrap);
+      if (wrap.classList.contains('wrap')) wrap.classList.add('tall');
       var input = box.querySelector('input'), cnt = box.querySelector('.cnt');
       input.addEventListener('input', function(){
         var q = input.value.trim().toLowerCase(), n = 0;
