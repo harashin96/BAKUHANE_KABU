@@ -14,7 +14,9 @@ import pandas as pd
 from .config import ROOT
 
 RESEARCH = ROOT / "research" / "qualitative.csv"
-COLUMNS = ["date", "code", "name", "rank", "price", "grade", "confidence", "drop", "summary", "good", "risk", "sources"]
+COLUMNS = ["date", "code", "name", "rank", "price", "grade", "confidence", "drop", "summary", "good", "risk", "sources",
+           # 割安カタリストの候補だけ(2026-11 に追加。それより前の行は空欄)
+           "catalyst", "recovery", "scenarios", "ev_pct", "priced_in"]
 DROP = ["巻き込まれ", "個別の悪材料", "理由不明", "下げていない"]   # 直近の下げの理由
 FRESH_DAYS = 35          # この日数より古い調査は「今の評価」として使わない
 GRADE_NAME = {"A": "A 買い材料あり", "B": "B 中立", "C": "C 避けたい"}
@@ -103,19 +105,36 @@ def _picks_block(title, focus, g, nm, rank_of, note, empty, label, gr, dr) -> li
                   + crow + "</table></div></details>"]
 
 
+def candidates_table(focus: pd.DataFrame, g: pd.DataFrame, nm, rank_of, picked=()) -> str:
+    """最終候補の元になった候補の一覧(最終候補に選ばれた行は色付き)"""
+    def gr(c):
+        return grade_cell(g, c)
+    def dr(c):
+        return html.escape(str(g.loc[c].get("drop", ""))) if c in g.index and pd.notna(g.loc[c].get("drop")) else "未調査"
+    crow = "".join(f"<tr class='{'new' if c in picked else ''}'><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td>{gr(c)}<td>{dr(c)}</td>"
+                   f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td>"
+                   f"<td class='num'>{_f(r['NCR'], '{:.2f}')}</td><td>{'最終候補' if c in picked else ''}</td></tr>"
+                   for c, r in focus.iterrows())
+    return ("<div class='wrap'><table><tr><th>順位</th><th>コード</th><th>銘柄</th><th>Claude</th><th>下げた理由</th><th>期待スコア</th>"
+            "<th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th><th>結果</th></tr>" + crow + "</table></div>")
+
+
 def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None, nm, focus: pd.DataFrame | None = None,
-                  rank_of=None, long: pd.DataFrame | None = None) -> str:
-    """最終候補(3か月: ランキング × 巻き添え安 / 長期: 清原式 × 期待スコア)× Claude評価 + 候補一覧 + 調査の詳細 + 答え合わせ"""
+                  rank_of=None, long: pd.DataFrame | None = None, with_picks: bool = True) -> str:
+    """最終候補(3か月: ランキング × 巻き添え安 / 長期: 清原式 × 期待スコア)× Claude評価 + 候補一覧 + 調査の詳細 + 答え合わせ
+    with_picks=False なら、最終候補の部分は出さない(ページの最初のカードで出すため)"""
     rank_of = rank_of or (lambda c: list(top.index).index(c) + 1)
     def gr(c):
         return f"<span class='g g{g.loc[c, 'grade']}'>{g.loc[c, 'grade']}</span>" if c in g.index else "<span class='g gB'>未</span>"
     def dr(c):
         return html.escape(str(g.loc[c].get("drop", ""))) if c in g.index and pd.notna(g.loc[c].get("drop")) else "未調査"
-    out = _picks_block("最終候補: 3か月保有(3〜5銘柄)", focus, g, nm, rank_of, SHORT_NOTE,
-                       "今日は「ランキング60位以内 かつ 巻き添え安の条件」を満たす銘柄がありません。ランキング上位から、Claude の評価が A の銘柄を優先してください。",
-                       "ランキング60位以内 × 巻き添え安の条件", gr, dr)
-    out += _picks_block("最終候補: 長期保有(1年以上・清原式 × 期待スコア)", long, g, nm, rank_of, LONG_NOTE,
-                        "今日は清原式の条件を満たす銘柄がありません。", "清原式の条件を満たす銘柄、期待スコア順", gr, dr)
+    out = []
+    if with_picks:
+        out += _picks_block("最終候補: 3か月保有(3〜5銘柄)", focus, g, nm, rank_of, SHORT_NOTE,
+                            "今日は「ランキング60位以内 かつ 巻き添え安の条件」を満たす銘柄がありません。ランキング上位から、Claude の評価が A の銘柄を優先してください。",
+                            "ランキング60位以内 × 巻き添え安の条件", gr, dr)
+        out += _picks_block("最終候補: 長期保有(1年以上・清原式 × 期待スコア)", long, g, nm, rank_of, LONG_NOTE,
+                            "今日は清原式の条件を満たす銘柄がありません。", "清原式の条件を満たす銘柄、期待スコア順", gr, dr)
     inr = [c for c in g.index if c in top.index or any(x is not None and c in x.index for x in (focus, long))]
     if not inr:
         out.append("<p class='note'>まだ定性調査の結果がありません。週1回、Claude が候補を調べて A/B/C と下げた理由を付けます。</p>")
@@ -127,7 +146,7 @@ def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None
                     f"<td><span class='g g{x['grade']}'>{x['grade']}</span></td><td>{html.escape(str(x['confidence']))}</td><td>{dr(c)}</td>"
                     f"<td>{x['date']:%m/%d}</td><td class='why'>{html.escape(str(x['summary']))}"
                     f"<div class='sec'>＋ {html.escape(str(x['good']))}<br>− {html.escape(str(x['risk']))}</div></td></tr>")
-    out.append("<details><summary class='note'>調査の詳細(クリックで開く)</summary><div class='wrap'><table>"
+    out.append(f"<details class='about'><summary>Claude が調べた {len(rows)} 銘柄の評価と理由</summary><div class='wrap'><table>"
                "<tr><th>順位</th><th>コード</th><th>銘柄</th><th>評価</th><th>確信度</th><th>下げた理由</th><th>調査日</th><th>理由</th></tr>"
                + "".join(rows) + "</table></div></details>")
     if check is not None and len(check):
@@ -143,6 +162,6 @@ def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None
                                f"<td class='num'>{(s['ret'] > 0).mean()*100:.0f}%</td></tr>")
         out.append("<h2>Claude評価の答え合わせ</h2><p class='note'>調査日の終値から3か月(63営業日)後までの株価の変化。"
                    "A が B・C より良ければ、定性評価が役に立っているということ。件数が少ないうちは偶然の差が大きいので、20件以上たまるまでは参考程度に。</p>"
-                   "<table><tr><th>評価</th><th>期間</th><th>件数</th><th>平均</th><th>全銘柄平均との差</th><th>上がった割合</th></tr>"
-                   + "".join(res) + "</table>")
+                   "<div class='wrap'><table><tr><th>評価</th><th>期間</th><th>件数</th><th>平均</th><th>全銘柄平均との差</th><th>上がった割合</th></tr>"
+                   + "".join(res) + "</table></div>")
     return "".join(out)

@@ -163,6 +163,71 @@ tr.det td{background:var(--soft);white-space:normal}
 .pc-only{display:inline} .hint{display:none;font-size:11.5px;color:var(--mut)}
 .empty{padding:28px;text-align:center;color:var(--mut);font-size:13px}
 @media (min-width:721px){table.dt.core .popt{display:none}}
+/* ヘッダーのボタン */
+.hbtn{font-size:12.5px;font-weight:600;color:var(--ink-fg);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:5px 11px;white-space:nowrap}
+.hbtn:hover{background:rgba(255,255,255,.08);text-decoration:none}
+/* 今日の最終候補(ページの主役) */
+.hero{margin:22px 0 8px}
+.hero-h{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px}
+.h-big{font-size:26px;margin:0 0 2px;letter-spacing:-.01em} .h-big::before{height:24px;width:5px}
+.hero-h .sub{margin:0;font-size:12.5px;color:var(--mut)}
+.gsw{display:inline-flex;padding:4px;border-radius:14px;background:var(--soft);border:1px solid var(--line);gap:2px}
+.gsw button{font:inherit;font-size:13.5px;font-weight:700;padding:8px 16px;border:none;border-radius:10px;background:transparent;color:var(--mut);cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;transition:all .15s}
+.gsw button span{font-size:11px;min-width:20px;padding:1px 6px;border-radius:999px;background:var(--line);color:var(--mut)}
+.gsw button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.gsw button.on span{background:var(--acc);color:#fff}
+.grp[hidden]{display:none} .grp{animation:rise .2s ease-out}
+.funnel{list-style:none;display:flex;flex-wrap:wrap;gap:6px;padding:0;margin:0 0 14px;counter-reset:f}
+.funnel li{display:flex;align-items:baseline;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:7px 12px;font-size:12px;color:var(--mut);position:relative}
+.funnel li b{font-size:14px;color:var(--fg);font-variant-numeric:tabular-nums}
+.funnel li:last-child{border-color:var(--acc);background:var(--acc-soft)} .funnel li:last-child b{color:var(--acc2)}
+.funnel li+li::before{content:"→";position:absolute;left:-12px;color:var(--mut);font-size:11px}
+.funnel li+li{margin-left:10px}
+/* 最終候補1銘柄のカード: 左=名前と選ばれた理由 / 中=Claude の調査 / 右=数字 */
+.pk{display:grid;grid-template-columns:minmax(230px,.9fr) minmax(280px,1.35fr) minmax(300px,1.15fr);background:var(--card);border:1px solid var(--line);
+  border-radius:18px;box-shadow:var(--shadow);margin:0 0 14px;overflow:hidden}
+.pk>div{padding:16px 18px;min-width:0} .pk>div+div{border-left:1px solid var(--line)}
+.pk-a{background:linear-gradient(180deg,var(--card2),var(--card))}
+.pk-h{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px}
+.pk-n{flex:0 0 auto;width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff;
+  background:linear-gradient(135deg,var(--acc),#3b82f6)}
+.pk-name{font-size:18px;font-weight:800;line-height:1.3;letter-spacing:-.01em}
+.pk-sub{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;font-size:12px;color:var(--mut);margin-top:3px}
+.pk-sub a:first-child{font-weight:700;font-variant-numeric:tabular-nums}
+.pk h4,.bt h4{font-size:11px;letter-spacing:.06em;color:var(--mut);margin:0 0 8px;font-weight:700}
+.why2{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.why2 li{font-size:12.5px;line-height:1.5;padding-left:10px;border-left:2px solid var(--line)}
+.why2 li span{display:block;font-size:10.5px;font-weight:700;color:var(--acc2);letter-spacing:.03em}
+.cl-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px 9px;margin-bottom:8px} .cl-h .g{height:26px;min-width:28px;font-size:14px}
+.cl-h b{font-size:14px} .cl-h .sub{font-size:11.5px;color:var(--mut)}
+.cl-s{font-size:14px;line-height:1.75;margin:0 0 10px;font-weight:500}
+.pc{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.pc li{font-size:12.5px;line-height:1.65;padding:8px 10px;border-radius:10px;background:var(--soft)}
+.pc li span{display:block;font-size:10.5px;font-weight:700;margin-bottom:1px}
+.pc .pro span{color:var(--up)} .pc .con span{color:var(--dn)}
+.cl-x{font-size:12.5px;margin:8px 0 0;line-height:1.65} .cl-x b{font-size:11px;color:var(--mut);margin-right:4px}
+.src{font-size:11px;color:var(--mut);margin:10px 0 0} .src a{margin-right:6px}
+.mg{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.m{background:var(--card);padding:8px 10px;min-width:0} .m[title]{cursor:help}
+.m span{display:block;font-size:10.5px;color:var(--mut);line-height:1.3;word-break:break-all}
+.m b{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap} .m small{font-size:10.5px;font-weight:500;color:var(--mut);margin-left:1px}
+.m b.up{color:var(--up)} .m b.dn{color:var(--dn)}
+.plan{font-size:12px;color:var(--mut);margin:10px 0 0;line-height:1.6} .plan b{color:var(--fg);margin-right:4px}
+.bt{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 18px;margin:4px 0 10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:6px}
+.stats div b{display:block;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--acc2)} .stats div span{font-size:11.5px;color:var(--mut)}
+.bt .note{margin:6px 0 0}
+details.in{margin-top:10px} details.in>summary{cursor:pointer;font-size:12px;color:var(--acc2);font-weight:600}
+.guide .steps{margin:0;padding-left:20px;font-size:13px;line-height:1.75} .guide .steps li{margin-bottom:4px}
+/* ランキングと参考リスト */
+.lists,.claude{margin-top:30px;padding-top:6px;border-top:1px solid var(--line)}
+.tabs.sub{position:sticky;top:var(--hh,52px);z-index:6;padding:6px 0 0;margin:6px 0 4px;background:color-mix(in srgb,var(--bg) 90%,transparent);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);max-width:none}
+.tabs.sub .tab{color:var(--mut)} .tabs.sub .tab:hover,.tabs.sub .tab.on{color:var(--fg)}
+@media (max-width:1100px){
+  .pk{grid-template-columns:1fr 1fr} .pk-b{grid-column:1 / -1;grid-row:2;border-left:none!important;border-top:1px solid var(--line)}
+}
 /* 横にスクロールしても銘柄名は左に残す */
 table.dt .stick{position:sticky;left:0;z-index:1;background:var(--card);box-shadow:1px 0 0 var(--line)}
 table.dt th.stick{z-index:3;background:var(--card2)}
@@ -187,6 +252,16 @@ table.dt th.stick{z-index:3;background:var(--card2)}
   .search{flex:1 1 100%} .search kbd{display:none}
   .pc-only{display:none}
   #sheet{bottom:0;width:100%;border-radius:20px 20px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+  .top-in{padding:10px 12px} .chip{display:none} .hbtn{padding:5px 9px;font-size:12px}
+  .hero{margin-top:16px} .h-big{font-size:22px}
+  .gsw{width:100%} .gsw button{flex:1;justify-content:center;padding:9px 6px;font-size:13px}
+  .funnel{gap:5px} .funnel li{font-size:11px;padding:6px 9px} .funnel li b{font-size:13px}
+  .funnel li+li::before{display:none} .funnel li+li{margin-left:0}
+  .pk{grid-template-columns:1fr;border-radius:16px} .pk>div{padding:14px 15px} .pk>div+div{border-left:none!important;border-top:1px solid var(--line)}
+  .pk-b{grid-row:auto} .pk-name{font-size:17px}
+  .m{padding:7px 8px} .m b{font-size:14px}
+  .stats div b{font-size:17px}
+  .tabs.sub{margin:6px -12px 4px;padding:4px 8px 0}
 }
 """
 
@@ -369,6 +444,19 @@ SCRIPT = r"""
     var nx = cur === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = nx;
     try { localStorage.setItem('theme', nx); } catch(e) {}
   });
+  // 最終候補の「3か月保有 / 長期保有」の切り替え(選んだほうを覚えておく)
+  var gsw = document.querySelectorAll('.gsw button');
+  function setG(g){
+    var ok = false; document.querySelectorAll('.grp').forEach(function(s){ var on = s.dataset.g === g; s.hidden = !on; ok = ok || on; });
+    if (!ok) return;
+    gsw.forEach(function(b){ b.classList.toggle('on', b.dataset.g === g); });
+    try { localStorage.setItem('grp', g); } catch(e) {}
+  }
+  gsw.forEach(function(b){ b.addEventListener('click', function(){ setG(b.dataset.g); }); });
+  try { var g0 = localStorage.getItem('grp'); if (g0) setG(g0); } catch(e) {}
+  // ヘッダーの高さ(参考リストのタブを、その下に止めておくため)
+  function hh(){ var h = document.querySelector('header.top'); if (h) document.documentElement.style.setProperty('--hh', h.offsetHeight + 'px'); }
+  hh(); window.addEventListener('resize', hh);
   // カードの「一覧へ」リンク: タブを切り替えてから移動
   document.querySelectorAll('[data-go]').forEach(function(a){
     a.addEventListener('click', function(ev){
