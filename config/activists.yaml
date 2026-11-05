@@ -1,0 +1,105 @@
+# アクティビスト(物言う株主)の一覧。大量保有報告書の「提出者名」で判定する。
+# 判定のしかた: 提出者名と name・aliases をどちらも「全角半角をそろえ、空白・記号・株式会社などを除き、英字を大文字に」してから、
+#   aliases のどれかが提出者名に含まれていればアクティビストとみなす(3文字以上の別名だけ使う)。
+# 自由に追加・削除してかまいません。aliases には EDINET の提出者名の一部(カタカナ表記・英語表記)を書くと確実です。
+#
+# 出典(2026-11-05 に確認):
+#   [A] 大手町プレップ「日本株アクティビストファンド一覧」 https://otemachiprep.com/activist-funds/
+#   [B] アクティビストのことがわかるブログ「アクティビスト一覧(2025年11月版)」 https://note.com/activist_blog/n/nf25c21fb4cee
+#       (大量保有報告書の保有目的に「重要提案行為等を行う場合がある」などと書いたことのある投資家の一覧)
+#   [E] EDINET の大量保有報告書の提出者名(実データ)で表記を確認したもの
+
+activists:
+  - name: エフィッシモ・キャピタル・マネージメント
+    aliases: [エフィッシモ, EFFISSIMO]
+    source: "[A][B][E]"
+  - name: オアシス・マネジメント
+    aliases: [オアシスマネジメント, OASISMANAGEMENT]
+    source: "[A][B][E]"
+  - name: 3Dインベストメント・パートナーズ
+    aliases: [スリーディーインベストメント, 3DINVESTMENT]
+    source: "[A][B][E]"
+  - name: ダルトン・インベストメンツ
+    aliases: [ダルトンインベストメンツ, DALTONINVESTMENTS]
+    source: "[A][B][E]"
+  - name: ニッポン・アクティブ・バリュー・ファンド
+    aliases: [ニッポンアクティブバリュー, NIPPONACTIVEVALUE]
+    source: "[A][B][E]"
+  - name: エリオット・インベストメント・マネジメント
+    aliases: [エリオットインベストメント, ELLIOTTINVESTMENT, エリオットアソシエイツ, ELLIOTTASSOCIATES]
+    source: "[A][B]"
+  - name: 旧村上ファンド系
+    aliases: [シティインデックスイレブンス, オフィスサポート, エスグラントコーポレーション, 南青山不動産, レノ, 村上世彰, 野村絢, 村上貴輝, CIHOLDINGS]
+    source: "[A][B] 個人名・会社名は各社の大量保有報告書の提出者名による"
+  - name: ストラテジックキャピタル
+    aliases: [ストラテジックキャピタル, STRATEGICCAPITAL]
+    source: "[A][E]"
+  - name: アセット・バリュー・インベスターズ
+    aliases: [アセットバリューインベスターズ, ASSETVALUEINVESTORS]
+    source: "[A]"
+  - name: パリサー・キャピタル
+    aliases: [パリサーキャピタル, PALLISER]
+    source: "[A]"
+  - name: カタリスト投資顧問(マネックス・アクティビスト・ファンド)
+    aliases: [カタリスト投資顧問, JAPANCATALYST]
+    source: "[A]"
+  - name: LIMアドバイザーズ
+    aliases: [エルアイエムアドバイザーズ, LIMADVISORS]
+    source: "[A]"
+  - name: スイス・アジア(グローバルESGストラテジー)
+    aliases: [スイスアジア, SWISSASIA, グローバルESGストラテジー, GLOBALESGSTRATEGY]
+    source: "[A][B]"
+  - name: ヴァレックス・パートナーズ
+    aliases: [ヴァレックスパートナーズ, バレックスパートナーズ, VARECS]
+    source: "[A]"
+  - name: バリューアクト・キャピタル
+    aliases: [バリューアクト, VALUEACT]
+    source: "[A]"
+  - name: シルチェスター・インターナショナル・インベスターズ
+    aliases: [シルチェスター, SILCHESTER]
+    source: "[A][B]"
+  - name: いちごアセットマネジメント
+    aliases: [イチゴアセットマネジメント, いちごアセットマネジメント, ICHIGOASSET]
+    source: "[A][B]"
+  - name: タイヨウ・パシフィック・パートナーズ
+    aliases: [タイヨウパシフィック, タイヨウファンド, TAIYOPACIFIC, TAIYOFUND]
+    source: "[A]"
+  - name: ファラロン・キャピタル・マネジメント
+    aliases: [ファラロン, FARALLON]
+    source: "[A]"
+  - name: ひびき・パース・アドバイザーズ
+    aliases: [ひびきパースアドバイザーズ, ヒビキパース, HIBIKIPATH]
+    source: "[A]"
+  - name: みさき投資
+    aliases: [みさき投資, MISAKICAPITAL]
+    source: "[A]"
+  - name: Yamauchi-No.10 Family Office
+    aliases: [ヤマウチナンバーテン, YAMAUCHINO10, YAMAUCHINO.10]
+    source: "[A]"
+  - name: シンフォニー・フィナンシャル・パートナーズ
+    aliases: [シンフォニーフィナンシャル, SYMPHONYFINANCIAL]
+    source: "[A]"
+  - name: ジャパン・アクティベーション・キャピタル
+    aliases: [ジャパンアクティベーションキャピタル, JAPANACTIVATION]
+    source: "[A]"
+  - name: サファイアテラ・キャピタル
+    aliases: [サファイアテラ, SAPPHIRETERRA]
+    source: "[A]"
+  - name: エムワイ・アルファ・マネジメント
+    aliases: [エムワイアルファ, MYALPHA]
+    source: "[A]"
+  - name: ゼナー・アセット・マネジメント
+    aliases: [ゼナーアセット, ZENNOR]
+    source: "[A]"
+  - name: fundnote
+    aliases: [ファンドノート, FUNDNOTE]
+    source: "[B]"
+  - name: アクシウムキャピタル
+    aliases: [アクシウムキャピタル, AXIUMCAPITAL]
+    source: "[B]"
+  - name: VIS Advisors
+    aliases: [ブイアイエスアドバイザーズ, VISADVISORS]
+    source: "[B]"
+  - name: キャピタルギャラリー
+    aliases: [キャピタルギャラリー, CAPITALGALLERY]
+    source: "[B]"

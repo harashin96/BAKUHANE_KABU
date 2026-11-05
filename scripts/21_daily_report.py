@@ -62,6 +62,19 @@ if not a.no_update:
             log.info(f"新しい書類はありません(確認 {n} 件)")
     except Exception as e:
         log.warning(f"EDINETの更新に失敗(前回までのデータで続けます): {e}")
+    try:   # カタリスト: 大量保有・自社株買い・公開買付の書類一覧、新しい有価証券報告書の大株主、アクティビストの保有割合
+        from jpstocks import catalyst as C
+        from jpstocks import edinet as E
+        key = E.api_key()
+        C.build_events(date.today() - timedelta(days=14), date.today(), key)
+        hx = E.load_index()
+        hx = hx[hx["docTypeCode"].isin(["120", "130"]) & (hx["withdrawalStatus"].fillna("0") == "0") & hx["code"].isin(set(uni["code"].astype(str)))]
+        C.build_holders(hx, key)
+        ev = C.load_events()
+        C.build_lvh(ev, key)
+        C.build_tob(ev, key)
+    except Exception as e:
+        log.warning(f"カタリストのデータの更新に失敗(前回までのデータで続けます): {e}")
 
 log.info("3/3 採点してレポートを作成")
 prices = load_prices()
@@ -87,9 +100,16 @@ today = score_day(w, bundle, i=i_use)
 top, dropped, hist = update_history(today, top_n)
 status = market_status(w, i_use)
 log.info(f"相場のお得度: {status['level']} ({status['score']:.0f})")
+try:
+    from jpstocks.catalyst import catalyst_candidates
+    cat = catalyst_candidates(today, w, uni)
+    log.info(f"割安カタリスト: {len(cat)} 銘柄")
+except Exception as e:
+    log.warning(f"割安カタリストを作れませんでした: {e}")
+    cat = None
 path = write_report(today, top, dropped, w, bundle, track_record(hist, w), budget, stop, rc.get("publish_dir") or "",
                     market=status, dips=dip_candidates(today, status), focus=focus_candidates(today, status),
-                    long=kiyohara_candidates(today))
+                    long=kiyohara_candidates(today), cat=cat)
 log.info(f"完了 ({time.time()-t0:.0f}秒): {path}")
 print(top[["p_jump", "p_crash", "price", "days_in"]].head(10).round(3).to_string())
 if not a.no_open:
