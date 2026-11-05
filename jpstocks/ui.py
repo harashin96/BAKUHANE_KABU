@@ -91,15 +91,20 @@ td.up,.up{color:var(--up)} td.dn,.dn{color:var(--dn)}
 tr.det td{background:var(--soft);white-space:normal}
 .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px 14px;font-size:12.5px}
 .kv div span{display:block;font-size:10.5px;color:var(--mut)}
-.pc-only{display:inline}
+.pc-only{display:inline} .hint{display:none;font-size:11.5px;color:var(--mut)}
+@media (min-width:721px){table.dt.core .popt{display:none}}
+/* 横にスクロールしても銘柄名は左に残す */
+table.dt .stick{position:sticky;left:0;z-index:1;background:var(--card);box-shadow:1px 0 0 var(--line)}
+table.dt th.stick{z-index:2} table.dt tr.new td.stick{background:var(--hl)} table.dt tr:hover td.stick{background:var(--soft)}
 /* スマホ */
 @media (max-width:720px){
   main{padding:0 12px 70px} .top-in{padding:8px 12px 0} .tabs{padding:6px 12px 8px}
   h1{font-size:16px} .card .big{font-size:22px}
   .cards{grid-template-columns:1fr;gap:10px}
   th,td{padding:7px 8px}
-  table.dt .mhide{display:none}
-  table.dt tr[data-i]{cursor:pointer}
+  table.dt.core .mhide{display:none}
+  table.dt.core tr[data-i]{cursor:pointer}
+  .hint{display:inline}
   .name{min-width:110px;max-width:150px}
   .why{min-width:200px}
   .tools input[type=search]{flex:1 1 100%}
@@ -133,6 +138,12 @@ SCRIPT = r"""
     var heads = Array.prototype.map.call(head.cells, function(th){ return th.textContent.trim(); });
     var body = Array.prototype.slice.call(rows, 1).filter(function(r){ return !r.classList.contains('det'); });
     body.forEach(function(r, i){ r.dataset.i = i; });
+    // 列の多い表は、横にスクロールしても「銘柄」の列を左に残す
+    var ns = heads.indexOf('銘柄');
+    if (ns >= 0 && heads.length > 5){
+      head.cells[ns].classList.add('stick');
+      body.forEach(function(r){ if (r.cells[ns]) r.cells[ns].classList.add('stick'); });
+    }
     // スマホで隠す列: CORE にない列(ただし最大5列は見せる)
     var shown = 0;
     heads.forEach(function(h, k){
@@ -168,14 +179,14 @@ SCRIPT = r"""
         vals.forEach(function(x){ parent.appendChild(x.r); });
       });
     });
-    // スマホ: 行をタップすると、隠れている列を下に開く
+    // 「主要な列だけ」にしたスマホでは、行をタップすると隠れている列を下に開く
     body.forEach(function(r){
       r.addEventListener('click', function(ev){
-        if (!MOBILE() || ev.target.closest('a,button,.g')) return;
+        if (!MOBILE() || !table.classList.contains('core') || ev.target.closest('a,button,.g')) return;
         var nx = r.nextElementSibling;
         if (nx && nx.classList.contains('det')){ nx.remove(); return; }
         var kv = heads.map(function(h, k){
-          var c = r.cells[k]; if (!c || !c.classList.contains('mhide') || !h) return '';
+          var c = r.cells[k]; if (!c || getComputedStyle(c).display !== 'none' || !h) return '';
           return '<div><span>' + h + '</span>' + c.innerHTML + '</div>';
         }).join('');
         if (!kv) return;
@@ -188,7 +199,8 @@ SCRIPT = r"""
     if (body.length >= 8){
       var box = document.createElement('div'); box.className = 'tools';
       box.innerHTML = '<input type="search" placeholder="銘柄名・コード・業種で絞り込み"><span class="cnt"></span>'
-        + (heads.length > 8 ? '<span class="seg pc-only"><button class="on" data-c="all">全部の列</button><button data-c="core">主要な列だけ</button></span>' : '');
+        + (heads.length > 8 ? '<span class="seg"><button class="on" data-c="all">全部の列</button><button data-c="core">主要な列だけ</button></span>'
+           + '<span class="hint">表は横にスクロールできます。「主要な列だけ」では行を押すと残りが開きます</span>' : '');
       var wrap = table.closest('.wrap') || table; wrap.parentNode.insertBefore(box, wrap);
       var input = box.querySelector('input'), cnt = box.querySelector('.cnt');
       input.addEventListener('input', function(){
@@ -200,8 +212,8 @@ SCRIPT = r"""
       box.querySelectorAll('.seg button').forEach(function(b){
         b.addEventListener('click', function(){
           box.querySelectorAll('.seg button').forEach(function(x){ x.classList.toggle('on', x === b); });
-          table.classList.toggle('coreonly', b.dataset.c === 'core');
-          table.querySelectorAll('.popt').forEach(function(c){ c.style.display = b.dataset.c === 'core' ? 'none' : ''; });
+          table.classList.toggle('core', b.dataset.c === 'core');
+          table.querySelectorAll('tr.det').forEach(function(d){ d.remove(); });
         });
       });
     }
