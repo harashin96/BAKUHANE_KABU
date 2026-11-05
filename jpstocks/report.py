@@ -156,9 +156,38 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
             + "".join(rows) + "</table></div>")
 
 
+def _ev(g: pd.DataFrame, code) -> str:
+    """Claude が3つのシナリオから計算した1〜2年後の期待値(割安カタリストの調査をした銘柄だけ)"""
+    if code not in g.index or "ev_pct" not in g.columns or pd.isna(g.loc[code, "ev_pct"]):
+        return "−"
+    tip = html.escape(str(g.loc[code].get("scenarios", "")))
+    return f"<span title='{tip}'>{float(g.loc[code, 'ev_pct']):+.0f}%</span>"
+
+
+def _catalyst_table(df: pd.DataFrame, nm, sec, rank, grades: pd.DataFrame) -> str:
+    rows = []
+    for k, (code, r) in enumerate(df.iterrows(), 1):
+        room = "−" if pd.isna(r.get("room_x")) else f"{r['room_x']*100:.0f}%"
+        tags = "".join(f"<span class='g gB'>{html.escape(x)}</span> " for x in str(r["flags"]).split("・") if x)
+        rows.append(f"<tr><td>{k}</td><td>{_links(code)}</td>"
+                    f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}"
+                    f"{' / 清原式' if r['kiyoshi'] else ' / 割安総合'}</div></td>"
+                    f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{r['mcap_oku']:,.0f}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
+                    f"<td class='num'><b>{_fmt(r['NCR'],'{:.2f}')}</b></td><td class='num'>{room}</td><td class='why'>{tags}</td>"
+                    f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{rank.get(code, '−')}</td>{grade_cell(grades, code)}"
+                    f"<td class='num'>{_ev(grades, code)}</td></tr>")
+    if not rows:
+        return "<p class='note'>今日は該当する銘柄がありません。</p>"
+    return ("<div class='wrap'><table><tr><th>#</th><th>コード</th><th>銘柄</th><th>株価</th><th>時価総額(億)</th><th>PBR</th>"
+            "<th>ネットキャッシュ比率</th><th>営業利益÷過去5年の最高</th><th>当てはまる条件</th><th>期待スコア</th><th>ランキング順位</th>"
+            "<th>Claude</th><th>Claudeの期待値(1〜2年)</th></tr>"
+            + "".join(rows) + "</table></div>")
+
+
 def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundle: dict, track: pd.DataFrame | None,
                  budget: float, stop_loss: float, publish_dir: str = "", market: dict | None = None,
-                 dips: pd.DataFrame | None = None, focus: pd.DataFrame | None = None, long: pd.DataFrame | None = None) -> str:
+                 dips: pd.DataFrame | None = None, focus: pd.DataFrame | None = None, long: pd.DataFrame | None = None,
+                 cat: pd.DataFrame | None = None) -> str:
     d = pd.Timestamp(today["date"].iloc[0])
     names = w.universe.set_index(w.universe["code"].astype(str))
     def nm(c):
@@ -191,7 +220,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 <td>{k}</td><td>{_links(code)}</td>
 <td class="name">{html.escape(str(nm(code)))}<div class="sec">{html.escape(str(sec(code)))}</div></td>
 {grade_cell(grades, code)}
-<td class="num"><b>{r['score']*100:.0f}</b></td>
+<td class="num"><b>{r['score']*100:.0f}</b><span class="bar" style="width:{max(2, min(40, (r['score']*100-45)*2)):.0f}px"></span></td>
 <td class="num">{r['p_jump']*100:.0f}%</td><td class="num">{r['p_crash']*100:.0f}%</td>
 <td>{status}</td>
 <td class="num px">{r['price']:,.0f}</td><td class="num">{cost100/1e4:,.1f}万{afford}</td>
@@ -206,22 +235,24 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
     # 保有銘柄
     pos = load_positions()
     # 相場の状態(お得度)と、相場に引きずられて下がった優良株
-    mk_html = ""
+    mk_html, mk_card = "", ""
     if market is not None:
         colors = {"大チャンス": "#b42318", "買い場": "#d9480f", "押し目": "#e8a200", "やや割安": "#5c8a6b", "平常": "#8a8a85"}
         c = colors.get(market["level"], "#888")
-        strip = "".join(f"<span title='{dd.date()} {lv} {v:.0f}' style='display:inline-block;width:14px;height:14px;margin-right:2px;border-radius:3px;background:{colors[lv]}'></span>"
-                        for dd, v, lv in market["history"])
+        strip = "".join(f"<span title='{dd.date()} {lv} {v:.0f}' style='background:{colors[lv]}'></span>" for dd, v, lv in market["history"])
         ind_rows = "".join(f"<tr><td>{html.escape(k)}</td><td class='num'>{v:,.1f}</td><td class='num'>{p:.0f}</td></tr>" for k, v, p in market["indicators"])
         legend = " ".join(f"<span style='color:{colors[n]}'>■</span>{n}" for n in ["大チャンス", "買い場", "押し目", "やや割安", "平常"])
-        mk_html = (f"<h2>相場のお得度: <span style='color:{c}'>{market['level']}</span> "
-                   f"<span style='color:var(--mut);font-weight:400'>({market['score']:.0f} / 100)</span></h2>"
-                   f"<p class='note'>{html.escape(market['note'])}<br>"
-                   f"直近20営業日: {strip} <span style='font-size:11px'>{legend}</span><br>"
+        mk_card = (f"<div class='card'><h3>相場のお得度</h3><div class='big' style='color:{c}'>{market['level']} "
+                   f"<span class='sub' style='font-size:14px;font-weight:400'>{market['score']:.0f} / 100</span></div>"
+                   f"<div class='gauge'><i style='left:{min(99.5, max(0.5, market['score'])):.1f}%'></i></div>"
+                   "<div class='gauge-l'><span>平常</span><span>50 やや割安</span><span>70 押し目</span><span>85 買い場</span><span>95</span></div>"
+                   f"<p class='sub' style='margin:8px 0 4px'>{html.escape(market['note'])}</p>"
+                   f"<div class='sub'>直近20営業日 <span class='strip'>{strip}</span></div></div>")
+        mk_html = (f"<details class='about'><summary>相場のお得度の計算と、指標の内訳</summary><p class='note'>"
                    f"9つの売られすぎ指標(騰落レシオ・25日線より上の銘柄の割合・52週安値の銘柄数・下落の深さ・値動きの大きさなど)を、過去と比べた位置で採点。"
-                   f"95以上=大チャンス / 85以上=買い場 / 70以上=押し目 / 50以上=やや割安。</p>"
-                   "<details><summary class='note'>指標の内訳</summary><table><tr><th>指標</th><th>今の値</th><th>お得度への寄与(0〜100)</th></tr>"
-                   + ind_rows + "</table></details>")
+                   f"95以上=大チャンス / 85以上=買い場 / 70以上=押し目 / 50以上=やや割安。<br>{legend}</p>"
+                   "<div class='wrap'><table><tr><th>指標</th><th>今の値</th><th>お得度への寄与(0〜100)</th></tr>"
+                   + ind_rows + "</table></div></details>")
         if dips is not None and len(dips):
             drow = []
             for code, r in dips.iterrows():
@@ -235,10 +266,9 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                     "<br><b>注意</b>: 下げた理由(悪い材料があるか)は見ていません。決算短信・業績予想の修正・増資・不祥事などは使っているデータ(EDINETの有価証券報告書・半期報告書)に入っていないため、<b>個別の悪材料で下げた銘柄も混ざります</b>。条件を満たす銘柄全体では、検証(2019〜2026年)で3か月後に全銘柄平均より +1.7%(t=3.8、8年中7年プラス)。相場のお得度に関係なく効いていました(お得度が高い時は市場全体が上がりやすいだけ)。</p>"
                     "<div class='wrap'><table><tr><th>コード</th><th>銘柄</th><th>1か月</th><th>爆ハネ確率</th><th>暴落確率</th><th>株価</th><th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>決算から(営業日)</th></tr>"
                     + "".join(drow) + "</table></div>")
-            if market["level"] in ("大チャンス", "買い場", "押し目"):
-                mk_html += body
-            else:
-                mk_html += "<details><summary class='note'>相場に引きずられて下がった優良株(今は参考。クリックで開く)</summary>" + body + "</details>"
+            opened = " open" if market["level"] in ("大チャンス", "買い場", "押し目") else ""
+            mk_html += (f"<details class='about'{opened}><summary>相場に引きずられて下がった優良株({len(dips)}銘柄)"
+                        f"{'' if opened else '(今は参考)'}</summary>" + body + "</details>")
 
     pos_html = ""
     if pos is not None:
@@ -260,8 +290,8 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
                         f"<td>{due.date()}</td><td class='num'>{p['buy_price']*(1+stop_loss):,.0f}</td>"
                         f"<td class='num'>{rank or '圏外'}</td><td>{act}</td></tr>")
         pos_html = f"""<h2>保有中の銘柄(config/my_positions.csv)</h2>
-<table><tr><th>コード</th><th>銘柄</th><th>買った日</th><th>買値</th><th>現在値</th><th>損益</th><th>3か月後(売り時)</th><th>損切り目安</th><th>今日の順位</th><th>判定</th></tr>
-{''.join(prow)}</table>"""
+<div class="wrap"><table><tr><th>コード</th><th>銘柄</th><th>買った日</th><th>買値</th><th>現在値</th><th>損益</th><th>3か月後(売り時)</th><th>損切り目安</th><th>今日の順位</th><th>判定</th></tr>
+{''.join(prow)}</table></div>"""
 
     drop_html = ""
     if dropped:
@@ -283,58 +313,54 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         return [] if df is None else [{"code": c, "rank": rank[c], "name": str(nm(c)), "sector": str(sec(c)), "price": round(float(r["price"]), 2),
                                        "ret1m_pct": round(float(r["RET1M"]), 1)} for c, r in df.iterrows()]
     cands, long_cands = cl(focus), cl(None if long is None else long.head(15))
+    cat_cands = [] if cat is None else [{**x, "flags": str(cat.loc[x["code"], "flags"]), "kiyohara": bool(cat.loc[x["code"], "kiyoshi"])}
+                                        for x in cl(cat.head(15))]
     tab_btn = "<button class='tab' data-t='bakuhane'>3か月期待値</button>" + "".join(
         f"<button class='tab' data-t='{tid}'>{html.escape(name)}</button>" for tid, name, _, _ in alts) + \
+        ("" if cat is None else f"<button class='tab' data-t='catalyst'>割安カタリスト({len(cat)})</button>") + \
         "<button class='tab' data-t='mypage'>マイページ</button>"
     from .mypage import mypage_parts, stocks_json
     mp_html, mp_js = mypage_parts(H, stop_loss)
     alt_html = "".join(f"<section class='pane' id='tab-{tid}'><p class='note'>{desc}</p>{_simple_table(df, nm, sec, budget)}</section>"
                        for tid, name, desc, df in alts)
+    if cat is not None:
+        from .catalyst import CATALYST_NOTE
+        alt_html += f"<section class='pane' id='tab-catalyst'><p class='note'>{CATALYST_NOTE}</p>{_catalyst_table(cat, nm, sec, rank, grades)}</section>"
+
+    def pick_card(title, codes, go, empty):
+        items = "".join(
+            f"<li><span class='rk'>{rank.get(c, '−')}位</span><span class='nm'>{_links(c)} {html.escape(str(nm(c)))}</span>"
+            + (f"<span class='g g{grades.loc[c, 'grade']}' title='{html.escape(str(grades.loc[c, 'date'])[:10] + ' 調査 / ' + str(grades.loc[c, 'summary']))}'>{grades.loc[c, 'grade']}</span>"
+               if c in grades.index else "<span class='g gB' title='まだ Claude が調べていません'>未</span>") + "</li>" for c in codes)
+        return (f"<div class='card'><h3>{title}</h3>" + (f"<ul class='plist'>{items}</ul>" if codes else f"<p class='sub'>{empty}</p>")
+                + f"<a href='#' class='more' data-go='bakuhane' data-anchor='picks'>選び方と詳しい理由 →</a></div>")
+    cards = ("<div class='cards'>" + mk_card
+             + pick_card("最終候補: 3か月保有", [] if focus is None else final_picks(focus, grades), "bakuhane", "今日は条件を満たす銘柄がありません")
+             + pick_card("最終候補: 長期保有(1年以上)", [] if long is None else final_picks(long, grades), "bakuhane", "今日は条件を満たす銘柄がありません")
+             + "</div>")
+    from .ui import SCRIPT, STYLE
 
     base_j, base_c = bundle["base_jump"] * 100, bundle["base_crash"] * 100
     page = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>爆ハネ期待値ランキング {d.date()}</title>
-<style>
-:root{{--bg:#fafaf8;--fg:#1d1d1b;--mut:#6b6b66;--line:#e3e2dc;--acc:#0b6e4f;--warn:#b54708;--sell:#b42318;--hl:#eaf6ef}}
-@media (prefers-color-scheme:dark){{:root{{--bg:#161615;--fg:#ecebe6;--mut:#a3a29b;--line:#33332f;--acc:#4cc38a;--warn:#f0a35e;--sell:#f97066;--hl:#1d2b23}}}}
-body{{background:var(--bg);color:var(--fg);font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;margin:0;padding:16px 20px;font-size:14px}}
-h1{{font-size:20px;margin:4px 0}} h2{{font-size:16px;margin:24px 0 8px}}
-.note{{color:var(--mut);font-size:12.5px;line-height:1.6;max-width:1100px}}
-.wrap{{overflow-x:auto}} table{{border-collapse:collapse;white-space:nowrap}}
-th,td{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}}
-th{{font-size:12px;color:var(--mut);font-weight:600;position:sticky;top:0;background:var(--bg)}}
-td.num{{text-align:right;font-variant-numeric:tabular-nums}} .name{{min-width:150px;max-width:220px;white-space:normal}}
-.sec{{font-size:11px;color:var(--mut)}} tr.new{{background:var(--hl)}} a{{color:var(--acc)}}
-.yb{{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid var(--line);border-radius:4px;font-size:11px;line-height:17px;text-decoration:none;color:#7b0099}}
-.yb:hover{{background:#7b0099;color:#fff;border-color:#7b0099}}
-.fav{{margin-left:4px;padding:0 4px;border:none;background:transparent;color:#e8a200;font-size:15px;cursor:pointer;line-height:17px}}
-.del{{font:inherit;font-size:12px;border:1px solid var(--line);background:transparent;color:var(--mut);border-radius:6px;cursor:pointer}}
-.mp-form{{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}}
-.mp-form input{{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--fg)}}
-td.up{{color:var(--acc)}} td.dn{{color:var(--sell)}}
-.g{{display:inline-block;min-width:18px;text-align:center;border-radius:4px;font-weight:700;font-size:12px;padding:0 4px;cursor:help}}
-.gA{{background:var(--acc);color:#fff}} .gB{{border:1px solid var(--line);color:var(--mut)}} .gC{{background:var(--sell);color:#fff}}
-tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20px}} .why{{white-space:normal;min-width:280px;max-width:520px}}
-.buy{{color:var(--acc);font-weight:700}} .warn{{color:var(--warn);font-size:11px}} .sell{{color:var(--sell);font-weight:700}}
-.tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 4px;position:sticky;top:0;background:var(--bg);padding:6px 0;z-index:2}}
-.tab{{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);cursor:pointer}}
-.tab.on{{background:var(--acc);border-color:var(--acc);color:#fff}}
-.btn{{font:inherit;font-size:13px;padding:5px 12px;border:1px solid var(--acc);border-radius:999px;background:transparent;color:var(--acc);cursor:pointer}} .pane{{display:none}} .pane.on{{display:block}}
-</style></head><body>
-<h1>爆ハネ期待値ランキング <span style="color:var(--mut);font-weight:400">{d.date()} 終値時点</span></h1>
-<p class="note">作成: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}(平日16:00ごろ自動更新)</p>
-<p class="note">並び順 = <b>期待スコア</b>: 3か月後の株価の上がり方が、全対象銘柄の中で何番目くらいになるかの予測(100点満点、平均50点。60点台でも上位の予測です)。
+<style>{STYLE}</style></head><body>
+<header class="top"><div class="top-in"><h1>爆ハネ期待値ランキング</h1><span class="chip">{d.date()} 終値時点</span>
+<span class="chip">更新 {pd.Timestamp.now().strftime('%m/%d %H:%M')}(平日16時ごろ)</span></div>
+<nav class="tabs">{tab_btn}</nav></header>
+<main>
+{cards}
+<details class="about"><summary>このランキングの見方と、検証の結果</summary><p class="note">並び順 = <b>期待スコア</b>: 3か月後の株価の上がり方が、全対象銘柄の中で何番目くらいになるかの予測(100点満点、平均50点。60点台でも上位の予測です)。
 株価の動き・出来高・割安度・業績の伸びなど30項目から計算。参考として 3か月以内に+30%以上(爆ハネ)/-30%以下(暴落)になる確率も表示(全銘柄の平均は {base_j:.0f}% / {base_c:.0f}%)。<br>
 <b>検証</b>(2019〜2026年、毎年それ以前のデータだけで学習): 毎日の上位5銘柄は3か月後に全銘柄平均より <b>+2.6%</b>、上がっていた割合 <b>58%</b>、-30%以下まで下げたのは3%。
 上位50位までは平均より +1〜1.5%。以前の並び順(爆ハネ確率−暴落確率)より値動きが穏やかな銘柄が多く、+30%以上の大当たりは少なめです。
-差は統計的にはやや弱い(t値1〜2.6)ので、<b>Claudeの定性評価(A/B/C)と組み合わせて絞り込み</b>、3か月(63営業日)保有が基本。損切り目安({stop_loss*100:.0f}%)は任意。投資判断はご自身で。</p>
+差は統計的にはやや弱い(t値1〜2.6)ので、<b>Claudeの定性評価(A/B/C)と組み合わせて絞り込み</b>、3か月(63営業日)保有が基本。損切り目安({stop_loss*100:.0f}%)は任意。投資判断はご自身で。<br>
+<b>使い方</b>: 表の見出しを押すと並べ替え。検索欄で銘柄名・コード・業種を絞り込み。スマホでは行を押すと残りの項目が開きます。A/B/C を押すと Claude の評価の理由が出ます。</p></details>
 {mk_html}
 {pos_html}
-<div class="tabs">{tab_btn}</div>
 <section class="pane" id="tab-bakuhane">
-{res_html}
+<div id="picks">{res_html}</div>
 <h2>ランキング(上位{len(top)}銘柄)</h2>
-<p class="note"><b>3か月期待値</b>: 期待スコアの高い順。「Claude」の列は直近の定性評価(A=買い材料あり / B=中立 / C=避けたい。マウスを乗せると理由)。C と「個別の悪材料」の行は薄く表示。</p>
+<p class="note"><b>3か月期待値</b>: 期待スコアの高い順。「Claude」の列は直近の定性評価(A=買い材料あり / B=中立 / C=避けたい。押すと理由)。C と「個別の悪材料」の行は薄く表示。</p>
 <p class="note" id="live-note" hidden></p>
 <div class="wrap"><table>
 <tr><th>#</th><th>コード</th><th>銘柄</th><th>Claude</th><th>期待スコア</th><th>爆ハネ確率</th><th>暴落確率</th><th>買い時</th><th>株価</th><th>100株</th><th>ランクイン</th><th>ランクイン後</th><th>売り時の目安</th><th>損切り目安</th>
@@ -380,6 +406,8 @@ tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20
 </script>
 {mp_js}
 <p class="note">モデル: {bundle['trained_until']} までのデータで学習(サンプル {bundle['n_samples']:,})。データ: 株価 yfinance、財務 EDINET(提出日以降のみ使用)。金融業は除外、売買代金(20日中央値)3,000万円以上。</p>
+</main>
+{SCRIPT}
 </body></html>"""
     REPORTS.mkdir(exist_ok=True)
     out = REPORTS / f"ranking_{d.date()}.html"
@@ -388,7 +416,8 @@ tr.cx td{{opacity:.55}} .picks{{line-height:1.8;max-width:1100px;padding-left:20
     (REPORTS / "stocks.json").write_text(stocks_json(today, w, market), encoding="utf-8")
     (REPORTS / "top.json").write_text(json.dumps({"date": str(d.date()), "stocks": live, "candidates": cands, "long_candidates": long_cands,
                                                    "picks_short": [] if focus is None else final_picks(focus, grades),
-                                                   "picks_long": [] if long is None else final_picks(long, grades)}, ensure_ascii=False), encoding="utf-8")
+                                                   "picks_long": [] if long is None else final_picks(long, grades),
+                                                   "catalyst_candidates": cat_cands}, ensure_ascii=False), encoding="utf-8")
     if publish_dir:
         import os
         from pathlib import Path
