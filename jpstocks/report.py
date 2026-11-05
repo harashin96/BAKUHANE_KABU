@@ -329,7 +329,8 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 
     def pick_card(title, codes, go, empty):
         items = "".join(
-            f"<li><span class='rk'>{rank.get(c, '−')}位</span><span class='nm'>{_links(c)} {html.escape(str(nm(c)))}</span>"
+            f"<li><span class='rk'>{rank.get(c, '−')}位</span><span class='nm'>{_links(c)} {html.escape(str(nm(c)))}"
+            f"<small>{html.escape(str(grades.loc[c, 'summary'])) if c in grades.index else html.escape(str(sec(c)))}</small></span>"
             + (f"<span class='g g{grades.loc[c, 'grade']}' title='{html.escape(str(grades.loc[c, 'date'])[:10] + ' 調査 / ' + str(grades.loc[c, 'summary']))}'>{grades.loc[c, 'grade']}</span>"
                if c in grades.index else "<span class='g gB' title='まだ Claude が調べていません'>未</span>") + "</li>" for c in codes)
         return (f"<div class='card'><h3>{title}</h3>" + (f"<ul class='plist'>{items}</ul>" if codes else f"<p class='sub'>{empty}</p>")
@@ -338,14 +339,15 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
              + pick_card("最終候補: 3か月保有", [] if focus is None else final_picks(focus, grades), "bakuhane", "今日は条件を満たす銘柄がありません")
              + pick_card("最終候補: 長期保有(1年以上)", [] if long is None else final_picks(long, grades), "bakuhane", "今日は条件を満たす銘柄がありません")
              + "</div>")
-    from .ui import SCRIPT, STYLE
+    from .ui import HEAD, SCRIPT, STYLE, THEME_BTN
 
     base_j, base_c = bundle["base_jump"] * 100, bundle["base_crash"] * 100
     page = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>爆ハネ期待値ランキング {d.date()}</title>
-<style>{STYLE}</style></head><body>
-<header class="top"><div class="top-in"><h1>爆ハネ期待値ランキング</h1><span class="chip">{d.date()} 終値時点</span>
-<span class="chip">更新 {pd.Timestamp.now().strftime('%m/%d %H:%M')}(平日16時ごろ)</span></div>
+{HEAD}<style>{STYLE}</style></head><body>
+<header class="top"><div class="top-in"><div class="brand"><div class="logo">爆</div><h1><span>爆ハネ</span>期待値ランキング</h1></div>
+<span class="chip"><i class="dot"></i>{d.date()} 終値</span>
+<span class="chip upd">更新 {pd.Timestamp.now().strftime('%m/%d %H:%M')}(平日16時ごろ)</span>{THEME_BTN}</div>
 <nav class="tabs">{tab_btn}</nav></header>
 <main>
 {cards}
@@ -354,7 +356,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 <b>検証</b>(2019〜2026年、毎年それ以前のデータだけで学習): 毎日の上位5銘柄は3か月後に全銘柄平均より <b>+2.6%</b>、上がっていた割合 <b>58%</b>、-30%以下まで下げたのは3%。
 上位50位までは平均より +1〜1.5%。以前の並び順(爆ハネ確率−暴落確率)より値動きが穏やかな銘柄が多く、+30%以上の大当たりは少なめです。
 差は統計的にはやや弱い(t値1〜2.6)ので、<b>Claudeの定性評価(A/B/C)と組み合わせて絞り込み</b>、3か月(63営業日)保有が基本。損切り目安({stop_loss*100:.0f}%)は任意。投資判断はご自身で。<br>
-<b>使い方</b>: 表の見出しを押すと並べ替え。検索欄で銘柄名・コード・業種を絞り込み。表は横にスクロールでき、銘柄名は左に残ります。「主要な列だけ」に切り替えると、スマホでは行を押すと残りの項目が開きます。A/B/C を押すと Claude の評価の理由が出ます。</p></details>
+<b>使い方</b>: 表の見出しを押すと並べ替え。検索欄で銘柄名・コード・業種を絞り込み(PCは「/」キーで検索欄へ)。「★ お気に入り」「Claude A」「新規ランクイン」のボタンで絞り込み。右上の ◐ でライト/ダークを切り替え。表は横にスクロールでき、銘柄名は左に残ります。「主要な列だけ」に切り替えると、スマホでは行を押すと残りの項目が開きます。A/B/C を押すと Claude の評価の理由が出ます。</p></details>
 {mk_html}
 {pos_html}
 <section class="pane" id="tab-bakuhane">
