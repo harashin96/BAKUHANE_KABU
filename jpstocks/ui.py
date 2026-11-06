@@ -16,11 +16,13 @@ THEME_BTN = "<button id='theme' class='icon-btn' title='ライト/ダークの�
 _LIGHT = """--bg:#f4f5f7;--card:#ffffff;--card2:#fafbfc;--fg:#0f1419;--mut:#64707d;--line:#e6e8ec;--soft:#f1f3f5;
   --acc:#0fa47a;--acc2:#0b7d5d;--acc-soft:#e6f6f0;--ink:#0d1117;--ink-fg:#f5f7fa;--ink-mut:#8b96a3;
   --warn:#c2620a;--sell:#e5484d;--up:#0f9d6e;--dn:#e5484d;--hl:#effaf5;--gold:#e8a200;
-  --shadow:0 1px 2px rgba(16,24,40,.04),0 6px 20px rgba(16,24,40,.05);--shadow2:0 12px 40px rgba(16,24,40,.18)"""
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 6px 20px rgba(16,24,40,.05);--shadow2:0 12px 40px rgba(16,24,40,.18);
+  --q3:#067a52;--q3b:#d2f1e3;--q2b:#ecf8f2;--q0:#b54708;--q0b:#fdeee2"""
 _DARK = """--bg:#0b0d10;--card:#13161b;--card2:#171b21;--fg:#e8ebef;--mut:#8f9aa6;--line:#242a31;--soft:#1b2027;
   --acc:#2fd09a;--acc2:#5ee0b4;--acc-soft:#123026;--ink:#07090c;--ink-fg:#f5f7fa;--ink-mut:#7d8894;
   --warn:#f0a35e;--sell:#ff6b70;--up:#2fd09a;--dn:#ff6b70;--hl:#11241d;--gold:#f5b82e;
-  --shadow:0 1px 0 rgba(255,255,255,.02);--shadow2:0 12px 40px rgba(0,0,0,.6)"""
+  --shadow:0 1px 0 rgba(255,255,255,.02);--shadow2:0 12px 40px rgba(0,0,0,.6);
+  --q3:#5ee0b4;--q3b:#123a2c;--q2b:#15251f;--q0:#f0a35e;--q0b:#35230f"""
 
 STYLE = """
 :root{""" + _LIGHT + """;color-scheme:light}
@@ -213,6 +215,11 @@ tr.det td{background:var(--soft);white-space:normal}
 .m span{display:block;font-size:10.5px;color:var(--mut);line-height:1.3;word-break:break-all}
 .m b{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap} .m small{font-size:10.5px;font-weight:500;color:var(--mut);margin-left:1px}
 .m b.up{color:var(--up)} .m b.dn{color:var(--dn)}
+td.q3{background:var(--q3b);color:var(--q3);font-weight:700} td.q2{background:var(--q2b);color:var(--q3)} td.q0{background:var(--q0b);color:var(--q0)} td.qn{color:var(--mut)}
+.m.q3{background:var(--q3b)} .m.q3 b{color:var(--q3)} .m.q2{background:var(--q2b)} .m.q0{background:var(--q0b)} .m.q0 b{color:var(--q0)}
+.m i.ql{font-style:normal;font-weight:700;margin-left:4px;color:var(--q3)} .m.q0 i.ql{color:var(--q0)} .m.qn i.ql{color:var(--mut)}
+.qleg{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:11.5px;color:var(--mut);margin:6px 0 10px}
+.qleg b{font-weight:600;padding:1px 7px;border-radius:6px} .qleg .q3{background:var(--q3b);color:var(--q3)} .qleg .q2{background:var(--q2b);color:var(--q3)} .qleg .q0{background:var(--q0b);color:var(--q0)}
 .plan{font-size:12px;color:var(--mut);margin:10px 0 0;line-height:1.6} .plan b{color:var(--fg);margin-right:4px}
 .bt{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 18px;margin:4px 0 10px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:6px}
@@ -467,3 +474,42 @@ SCRIPT = r"""
 })();
 </script>
 """
+
+
+# 数字の色分け(割安・高配当・現金が厚い = 緑、割高・低配当・負債が多め = 橙)。一般的な目安で、検証した基準ではない
+VAL_RULES = {
+    "PER": ("{:.1f}", [(lambda v: v <= 0, "qn", "赤字"), (lambda v: v < 10, "q3", "割安"), (lambda v: v < 15, "q2", "やや割安"),
+                        (lambda v: v < 25, "q1", ""), (lambda v: True, "q0", "割高")]),
+    "PBR": ("{:.2f}", [(lambda v: v <= 0, "qn", ""), (lambda v: v < 0.7, "q3", "かなり割安"), (lambda v: v < 1, "q2", "割安"),
+                        (lambda v: v < 2.5, "q1", ""), (lambda v: True, "q0", "割高")]),
+    "DY": ("{:.1f}%", [(lambda v: v <= 0, "qn", "無配"), (lambda v: v >= 4, "q3", "高配当"), (lambda v: v >= 3, "q2", "やや高配当"),
+                        (lambda v: v >= 1.5, "q1", ""), (lambda v: True, "q0", "低配当")]),
+    "NCR": ("{:.2f}", [(lambda v: v >= 1, "q3", "現金>時価総額"), (lambda v: v >= 0.5, "q2", "現金が厚い"),
+                        (lambda v: v >= 0, "q1", ""), (lambda v: True, "q0", "負債が多め")]),
+}
+
+
+def val_q(kind: str, v) -> tuple[str, str]:
+    """数字 → (色のクラス, ひとこと)"""
+    import math
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return "", ""
+    for cond, cls, lab in VAL_RULES[kind][1]:
+        if cond(float(v)):
+            return cls, lab
+    return "", ""
+
+
+def val_td(kind: str, v, bold: bool = False) -> str:
+    """表のセル(色付き)。マウスを乗せると「割安」などの説明"""
+    import math
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return "<td class='num'>−</td>"
+    cls, lab = val_q(kind, v)
+    t = VAL_RULES[kind][0].format(float(v))
+    t = f"<b>{t}</b>" if bold else t
+    return f"<td class='num {cls}'" + (f" title='{lab}'" if lab else "") + f">{t}</td>"
+
+
+VAL_LEGEND = ("<div class='qleg'><span>数字の色:</span><b class='q3'>とても良い</b><b class='q2'>良い</b><b class='q0'>注意</b>"
+              "<span>PER 10未満 / PBR 0.7未満 / 配当利回り 4%以上 / ネットキャッシュ比率 1以上 が濃い緑。PER 25以上・PBR 2.5以上・配当1.5%未満・ネットキャッシュ比率マイナスは橙(一般的な目安)</span></div>")

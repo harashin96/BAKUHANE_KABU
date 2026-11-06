@@ -97,6 +97,9 @@ const get = (code) => {
   if (!S || !S.stocks[code]) return null;
   const o = {}; S.fields.forEach((f, i) => o[f] = S.stocks[code][i]); return o;
 };
+const QR = {PER: v => v <= 0 ? 'qn' : v < 10 ? 'q3' : v < 15 ? 'q2' : v < 25 ? '' : 'q0', PBR: v => v <= 0 ? 'qn' : v < 0.7 ? 'q3' : v < 1 ? 'q2' : v < 2.5 ? '' : 'q0',
+  DY: v => v <= 0 ? 'qn' : v >= 4 ? 'q3' : v >= 3 ? 'q2' : v >= 1.5 ? '' : 'q0', NCR: v => v >= 1 ? 'q3' : v >= 0.5 ? 'q2' : v >= 0 ? '' : 'q0'};
+const qc = (k, v) => (v === null || v === undefined || isNaN(v)) ? '' : QR[k](Number(v));   // 数字の色分け(ui.py の VAL_RULES と同じ)
 const fmt = (v, d = 1, suf = '') => (v === null || v === undefined || isNaN(v)) ? '−' : Number(v).toLocaleString('ja-JP', {minimumFractionDigits: d, maximumFractionDigits: d}) + suf;
 const links = (c) => `<a href="https://nikkeiyosoku.com/stock/${esc(c)}/" target="_blank">${esc(c)}</a><a class="yb" href="https://finance.yahoo.co.jp/quote/${esc(c)}.T" target="_blank">Y!</a>`;
 function addBdays(dstr, n) { const d = new Date(dstr + 'T00:00:00'); let k = 0; while (k < n) { d.setDate(d.getDate() + 1); if (d.getDay() % 6 !== 0) k++; } return d; }
@@ -133,7 +136,7 @@ function render() {
       <td class="num">${fmt(s.price, 0)}</td><td class="num">${fmt(s.RET1M, 0, '%')}</td><td class="num">${s.rank ?? '圏外'}</td>
       <td class="num">${fmt(s.p_jump === null || s.p_jump === undefined ? null : s.p_jump * 100, 0, '%')}</td>
       <td class="num">${fmt(s.p_crash === null || s.p_crash === undefined ? null : s.p_crash * 100, 0, '%')}</td>
-      <td class="num">${fmt(s.PER)}</td><td class="num">${fmt(s.PBR, 2)}</td><td class="num">${fmt(s.DY, 1, '%')}</td><td class="num">${fmt(s.NCR, 2)}</td>
+      <td class="num ${qc('PER', s.PER)}">${fmt(s.PER)}</td><td class="num ${qc('PBR', s.PBR)}">${fmt(s.PBR, 2)}</td><td class="num ${qc('DY', s.DY)}">${fmt(s.DY, 1, '%')}</td><td class="num ${qc('NCR', s.NCR)}">${fmt(s.NCR, 2)}</td>
       <td class="num">${fmt(s.HI52, 0, '%')}</td><td><button class="del" data-f="${i}">削除</button></td></tr>`;
   }).join('');
   $('f-table').innerHTML = state.favorites.length ? `<table><tr><th>コード</th><th>銘柄</th><th>株価</th><th>1か月</th><th>順位</th><th>爆ハネ確率</th><th>暴落確率</th><th>PER</th><th>PBR</th><th>配当利回り</th><th>ネットキャッシュ比率</th><th>52週高値比</th><th></th></tr>${rows}</table>` : '<p class="note">まだ登録がありません。</p>';

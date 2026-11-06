@@ -18,6 +18,8 @@ HISTORY = REPORTS / "rank_history.csv"
 POSITIONS = ROOT / "config" / "my_positions.csv"
 
 
+from .ui import VAL_LEGEND, val_q, val_td
+
 def _bday_after(d: pd.Timestamp, n: int) -> pd.Timestamp:
     return (pd.Timestamp(d) + pd.offsets.BDay(n)).normalize()
 
@@ -146,8 +148,8 @@ def _simple_table(df: pd.DataFrame, nm, sec, budget: float) -> str:
                     f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}</div></td>"
                     f"<td class='num'>{r['p_jump']*100:.0f}%</td><td class='num'>{r['p_crash']*100:.0f}%</td>"
                     f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{cost100/1e4:,.1f}万{afford}</td>"
-                    f"<td class='num'>{_fmt(r['PER'])}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
-                    f"<td class='num'><b>{_fmt(r['NCR'],'{:.2f}')}</b></td><td class='num'>{_fmt(r['DY'],'{:.1f}%')}</td>"
+                    f"{val_td('PER', r['PER'])}{val_td('PBR', r['PBR'])}"
+                    f"{val_td('NCR', r['NCR'], True)}{val_td('DY', r['DY'])}"
                     f"<td class='num'>{r['mcap_oku']:,.0f}</td><td class='num'>{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class='num'>{_fmt(r['HI52'],'{:.0f}')}%</td></tr>")
     if not rows:
         return "<p class='note'>今日は該当する銘柄がありません。</p>"
@@ -172,8 +174,8 @@ def _catalyst_table(df: pd.DataFrame, nm, sec, rank, grades: pd.DataFrame) -> st
         rows.append(f"<tr><td>{k}</td><td>{_links(code)}</td>"
                     f"<td class='name'>{html.escape(str(nm(code)))}<div class='sec'>{html.escape(str(sec(code)))}"
                     f"{' / 清原式' if r['kiyoshi'] else ' / 割安総合'}</div></td>"
-                    f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{r['mcap_oku']:,.0f}</td><td class='num'>{_fmt(r['PBR'],'{:.2f}')}</td>"
-                    f"<td class='num'><b>{_fmt(r['NCR'],'{:.2f}')}</b></td><td class='num'>{room}</td><td class='why'>{tags}</td>"
+                    f"<td class='num'>{r['price']:,.0f}</td><td class='num'>{r['mcap_oku']:,.0f}</td>{val_td('PBR', r['PBR'])}"
+                    f"{val_td('NCR', r['NCR'], True)}<td class='num'>{room}</td><td class='why'>{tags}</td>"
                     f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{rank.get(code, '−')}</td>{grade_cell(grades, code)}"
                     f"<td class='num'>{_ev(grades, code)}</td></tr>")
     if not rows:
@@ -232,7 +234,7 @@ def _pick_card(i: int, c: str, kind: str, pool: pd.DataFrame, today: pd.DataFram
         dr = x.get("drop") if pd.notna(x.get("drop")) else "−"
         why.append(("Claude", f"{x['grade']}{'(A なので優先)' if x['grade'] == 'A' else ''}・下げた理由: {dr}"))
     else:
-        why.append(("Claude", "まだ調査していません(平日の朝に調べます)"))
+        why.append(("Claude", "まだ調査していません(1日3回、順番に調べています)"))
     if c in other:
         why.append(("重複", "もう一方の最終候補にも入っています"))
     why_html = "".join(f"<li><span>{_e(k)}</span>{_e(v)}</li>" for k, v in why)
@@ -251,19 +253,21 @@ def _pick_card(i: int, c: str, kind: str, pool: pd.DataFrame, today: pd.DataFram
                   f"<ul class='pc'><li class='pro'><span>良い点</span>{_e(x['good'])}</li><li class='con'><span>注意点</span>{_e(x['risk'])}</li></ul>"
                   + extra + (f"<p class='src'>出典 {src}</p>" if src else ""))
     else:
-        claude = "<div class='cl-h'><span class='g gB'>未</span><b>Claude の調査はまだです</b></div><p class='sub'>平日の朝に調べて、理由を付けます。</p>"
+        claude = "<div class='cl-h'><span class='g gB'>未</span><b>Claude の調査はまだです</b></div><p class='sub'>1日3回(5時・12時・20時ごろ)順番に調べて、理由を付けます。</p>"
 
-    def m(label, val, cls="", tip=""):
+    def m(label, val, cls="", tip="", q=None):
         t = f" title='{_e(tip)}'" if tip else ""
-        return f"<div class='m'{t}><span>{label}</span><b class='{cls}'>{val}</b></div>"
+        qc, ql = val_q(q, r[q]) if q else ("", "")
+        lab = f"{label}<i class='ql'>{ql}</i>" if ql else label
+        return f"<div class='m {qc}'{t}><span>{lab}</span><b class='{cls}'>{val}</b></div>"
     r1 = r["RET1M"]
     metrics = (m("株価", f"{r['price']:,.0f}<small>円</small>") + m("100株", f"{r['price']*100/1e4:,.1f}<small>万円</small>")
                + m("期待スコア", f"{sc:.0f}<small>点</small>", tip="3か月後の値上がりの順位の予測。平均50点、60点台なら上位")
                + m("直近1か月", f"{_fmt(r1, '{:+.0f}')}%", "up" if r1 > 0 else ("dn" if r1 < 0 else ""))
-               + m("PER", _fmt(r["PER"]), tip="株価÷1株あたり利益。低いほど割安")
-               + m("PBR", _fmt(r["PBR"], "{:.2f}"), tip="株価÷1株あたり純資産。1未満は解散価値より安い")
-               + m("配当利回り", _fmt(r["DY"], "{:.1f}%"))
-               + m("ネットキャッシュ比率", _fmt(r["NCR"], "{:.2f}"), tip="(流動資産+投資有価証券×70%−負債)÷時価総額。1以上なら実質の現金が時価総額より多い")
+               + m("PER", _fmt(r["PER"]), tip="株価÷1株あたり利益。低いほど割安(10未満で濃い緑、25以上で橙)", q="PER")
+               + m("PBR", _fmt(r["PBR"], "{:.2f}"), tip="株価÷1株あたり純資産。1未満は解散価値より安い(0.7未満で濃い緑)", q="PBR")
+               + m("配当利回り", _fmt(r["DY"], "{:.1f}%"), tip="1株配当÷株価(4%以上で濃い緑、1.5%未満で橙)", q="DY")
+               + m("ネットキャッシュ比率", _fmt(r["NCR"], "{:.2f}"), tip="(流動資産+投資有価証券×70%−負債)÷時価総額。1以上なら実質の現金が時価総額より多い(濃い緑)。マイナスは橙", q="NCR")
                + (m("会社予想(営業利益)", f"{pool.loc[c, 'fc_g']*100:+.0f}%", "up" if pool.loc[c, "fc_g"] > 0 else "dn",
                     tip="決算短信の今期の営業利益の予想 ÷ 前期の実績 − 1")
                   if kind == "long" and "fc_g" in pool.columns and pd.notna(pool.loc[c, "fc_g"]) else "")
@@ -323,7 +327,7 @@ def _hero(focus, long, today, g, nm, sec, rank, market, stop_loss, d, check_rank
                     f"{cand}</section>")
     return (f"<section class='hero' id='picks'><div class='hero-h'><div><h2 class='h-big'>今日の最終候補</h2>"
             f"<p class='sub'>{d.date()} の終値で選んだ銘柄です。投資判断はご自身でお願いします。</p></div>"
-            f"<div class='gsw' role='tablist'>{sw}</div></div>{''.join(secs)}</section>")
+            f"<div class='gsw' role='tablist'>{sw}</div></div>{VAL_LEGEND}{''.join(secs)}</section>")
 
 
 def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundle: dict, track: pd.DataFrame | None,
@@ -369,7 +373,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 <td>{ed.date()}<div class="sec">@{entry_px:,.0f}円</div></td>
 <td class="num since {since_cls}"><b>{since*100:+.1f}%</b><div class="sec">{r['price']-entry_px:+,.0f}円</div></td>
 <td>{sell_day.date()}</td><td class="num">{stop:,.0f}</td>
-<td class="num">{_fmt(r['PER'])}</td><td class="num">{_fmt(r['PBR'],'{:.2f}')}</td><td class="num">{_fmt(r['DY'],'{:.1f}%')}</td><td class="num">{_fmt(r['NCR'],'{:.2f}')}</td>
+{val_td('PER', r['PER'])}{val_td('PBR', r['PBR'])}{val_td('DY', r['DY'])}{val_td('NCR', r['NCR'])}
 <td class="num">{r['mcap_oku']:,.0f}</td><td class="num">{_fmt(r['RET1M'],'{:+.0f}')}%</td><td class="num">{_fmt(r['HI52'],'{:.0f}')}%</td>
 <td class="num">{_fmt(r['VOLSURGE'],'{:.1f}')}倍</td><td class="num">{_fmt(r['VOL60'],'{:.0f}')}%</td>
 </tr>""")
@@ -480,6 +484,7 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
 {pos_html}
 <section class="lists" id="lists"><h2>ランキングと参考リスト</h2>
 <p class="note">最終候補とは別の、参考の情報です。表の見出しを押すと並べ替え、検索欄や「Claude A」などのボタンで絞り込みができます。</p>
+{VAL_LEGEND}
 <nav class="tabs sub">{tab_btn}</nav>
 <section class="pane" id="tab-bakuhane">
 <p class="note"><b>ランキング(上位{len(top)}銘柄)</b>: 期待スコアの高い順。「Claude」の列は直近の定性評価(A=買い材料あり / B=中立 / C=避けたい。押すと理由)。C と「個別の悪材料」の行は薄く表示。</p>

@@ -1,6 +1,6 @@
 """Claude による定性調査(業界動向・決算・材料)の結果を読み、ランキングと組み合わせる
 
-research/qualitative.csv: 週1回、このPCの Claude Code(スケジュール実行)がランキング上位を調べて追記する
+research/qualitative.csv: 1日3回、このPCの Claude Code(スケジュール実行)が候補と未評価の銘柄を調べて追記する
 (手順: research/weekly_prompt.md、追記: scripts/23_add_research.py)。
 評価 A=3か月で市場平均を上回る材料がある / B=特に材料なし(中立) / C=避けたい材料がある
 """
@@ -21,6 +21,8 @@ DROP = ["巻き込まれ", "個別の悪材料", "理由不明", "下げてい�
 FRESH_DAYS = 35          # この日数より古い調査は「今の評価」として使わない
 GRADE_NAME = {"A": "A 買い材料あり", "B": "B 中立", "C": "C 避けたい"}
 
+
+from .ui import val_td
 
 def load_research() -> pd.DataFrame | None:
     if not RESEARCH.exists():
@@ -106,7 +108,7 @@ def _picks_block(title, focus, g, nm, rank_of, note, empty, label, gr, dr) -> li
                     + (f"確信度 {html.escape(str(g.loc[c, 'confidence']))} / 下げた理由: {dr(c)} — {html.escape(str(g.loc[c, 'summary']))}" if c in g.index else "まだ調査していません")
                     + "</li>" for c in final_picks(focus, g))
     crow = "".join(f"<tr><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td><td>{gr(c)}</td><td>{dr(c)}</td>"
-                   f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td><td class='num'>{_f(r['NCR'], '{:.2f}')}</td></tr>"
+                   f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td>{val_td('PER', r['PER'])}{val_td('NCR', r['NCR'])}</tr>"
                    for c, r in focus.iterrows())
     return out + [f"<ol class='picks'>{items}</ol>", f"<p class='note'>{note}"
                   "Claude の評価は検証済みではありません(下の答え合わせで確かめていきます)。投資判断はご自身で。</p>",
@@ -123,8 +125,8 @@ def candidates_table(focus: pd.DataFrame, g: pd.DataFrame, nm, rank_of, picked=(
     def dr(c):
         return html.escape(str(g.loc[c].get("drop", ""))) if c in g.index and pd.notna(g.loc[c].get("drop")) else "未調査"
     crow = "".join(f"<tr class='{'new' if c in picked else ''}'><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td>{gr(c)}<td>{dr(c)}</td>"
-                   f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td>"
-                   f"<td class='num'>{_f(r['NCR'], '{:.2f}')}</td>{guide_td(r) if has_g else ''}<td>{'最終候補' if c in picked else ''}</td></tr>"
+                   f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td>{val_td('PER', r['PER'])}"
+                   f"{val_td('NCR', r['NCR'])}{guide_td(r) if has_g else ''}<td>{'最終候補' if c in picked else ''}</td></tr>"
                    for c, r in focus.iterrows())
     return ("<div class='wrap'><table><tr><th>順位</th><th>コード</th><th>銘柄</th><th>Claude</th><th>下げた理由</th><th>期待スコア</th>"
             "<th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th>" + ("<th>会社予想(営業利益)</th>" if has_g else "")
@@ -163,7 +165,7 @@ def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None
                             "今日は清原式の条件を満たす銘柄がありません。", "清原式の条件を満たす銘柄、期待スコア順", gr, dr)
     inr = [c for c in g.index if c in top.index or any(x is not None and c in x.index for x in (focus, long))]
     if not inr:
-        out.append("<p class='note'>まだ定性調査の結果がありません。週1回、Claude が候補を調べて A/B/C と下げた理由を付けます。</p>")
+        out.append("<p class='note'>まだ定性調査の結果がありません。1日3回、Claude が候補と未評価の銘柄を調べて A/B/C と下げた理由を付けます。</p>")
         return "".join(out)
     rows = []
     for c in inr:
