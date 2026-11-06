@@ -84,3 +84,22 @@ def earnings_panels(raw: pd.DataFrame, dates: pd.DatetimeIndex, codes) -> dict[s
     ev = f[f["rev_up"] == 1]
     out["rev_up"] = _daily(ev.assign(v=1.0), "v", dates, codes, 60).fillna(0)
     return out
+
+
+GUIDE_DAYS = 1200   # 毎日の候補で使う決算短信の期間(前期・前々期の実績を引くため約3年分)
+
+
+def latest_guide(raw: pd.DataFrame, asof, codes) -> pd.DataFrame:
+    """毎日の候補用: 各銘柄の直近の会社予想(asof の日までに開示されたもの、100日以内)
+    列: fc_g(今期の営業利益の予想 ÷ 前期の実績 − 1)、guide_up、guide_turn、guide(どちらか)、disc(開示日)、fc、prev_act"""
+    cols = ["fc_g", "guide_up", "guide_turn", "guide", "disc", "fc", "prev_act"]
+    if raw is None or not len(raw):
+        return pd.DataFrame(columns=cols)
+    f = disclosure_features(tidy_fins(raw))
+    asof = pd.Timestamp(asof)
+    f = f[(f["date"] <= asof) & (f["date"] > asof - pd.Timedelta(days=100)) & f["fc_g"].notna()]
+    f = f.sort_values(["date", "time"]).drop_duplicates("code", keep="last").set_index("code")
+    out = pd.DataFrame({"fc_g": f["fc_g"], "guide_up": f["guide_up"], "guide_turn": f["guide_turn"], "disc": f["date"],
+                        "fc": f["fc"], "prev_act": f["prev_act"]})
+    out["guide"] = (out["guide_up"] == 1) | (out["guide_turn"] == 1)
+    return out.reindex(pd.Index([str(c) for c in codes]))[cols]

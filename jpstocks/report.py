@@ -215,7 +215,19 @@ def _pick_card(i: int, c: str, kind: str, pool: pd.DataFrame, today: pd.DataFram
         why.append(("巻き添え安", f"直近1か月 {_fmt(r['RET1M'], '{:+.0f}')}%{mtxt}・黒字・割安度が上位30%"))
     else:
         why.append(("清原式", f"ネットキャッシュ比率 {_fmt(r['NCR'], '{:.2f}')}(1以上)・黒字"))
-        why.append(("期待スコア", f"{sc:.0f}点(清原式 {len(pool)}銘柄の中で{list(pool.index).index(c) + 1}番目)"))
+        if "guide" in pool.columns:
+            from .research import guide_text
+            pr = pool.loc[c]
+            dd = f"・{pd.Timestamp(pr['disc']):%Y-%m-%d} 開示" if pd.notna(pr.get("disc")) else ""
+            if bool(pr["guide"]):
+                why.append(("会社予想", f"今期の営業利益 {guide_text(pr)}{dd}"))
+            else:
+                ng = int(pool["guide"].sum())
+                why.append(("会社予想", f"{guide_text(pr)}{dd}。増益予想の銘柄が{ng}つしかないため、残りの清原式から補っています"))
+            why.append(("期待スコア", f"{sc:.0f}点({'増益予想の' if bool(pr['guide']) else ''}清原式の中で"
+                                    f"{list(pool.index[pool['guide'] == pr['guide']]).index(c) + 1}番目)"))
+        else:
+            why.append(("期待スコア", f"{sc:.0f}点(清原式 {len(pool)}銘柄の中で{list(pool.index).index(c) + 1}番目)"))
     if x is not None:
         dr = x.get("drop") if pd.notna(x.get("drop")) else "−"
         why.append(("Claude", f"{x['grade']}{'(A なので優先)' if x['grade'] == 'A' else ''}・下げた理由: {dr}"))
@@ -252,6 +264,9 @@ def _pick_card(i: int, c: str, kind: str, pool: pd.DataFrame, today: pd.DataFram
                + m("PBR", _fmt(r["PBR"], "{:.2f}"), tip="株価÷1株あたり純資産。1未満は解散価値より安い")
                + m("配当利回り", _fmt(r["DY"], "{:.1f}%"))
                + m("ネットキャッシュ比率", _fmt(r["NCR"], "{:.2f}"), tip="(流動資産+投資有価証券×70%−負債)÷時価総額。1以上なら実質の現金が時価総額より多い")
+               + (m("会社予想(営業利益)", f"{pool.loc[c, 'fc_g']*100:+.0f}%", "up" if pool.loc[c, "fc_g"] > 0 else "dn",
+                    tip="決算短信の今期の営業利益の予想 ÷ 前期の実績 − 1")
+                  if kind == "long" and "fc_g" in pool.columns and pd.notna(pool.loc[c, "fc_g"]) else "")
                + m("時価総額", f"{r['mcap_oku']:,.0f}<small>億円</small>")
                + m("52週高値比", _fmt(r["HI52"], "{:.0f}%"), tip="今の株価が過去1年の最高値の何%か")
                + m("爆ハネ確率", f"{r['p_jump']*100:.0f}%", tip="3か月以内に+30%以上になる確率の予測")
@@ -270,9 +285,11 @@ def _pick_card(i: int, c: str, kind: str, pool: pd.DataFrame, today: pd.DataFram
 
 def _hero(focus, long, today, g, nm, sec, rank, market, stop_loss, d, check_rank) -> str:
     """ページの最初: 今日の最終候補(3か月 / 長期)を、選ばれた理由と数字つきで"""
-    from .research import LONG_NOTE, SHORT_NOTE, candidates_table, final_picks
+    from .research import LONG_NOTE, LONG_NOTE_G, SHORT_NOTE, candidates_table, final_picks
     sp = [] if focus is None else final_picks(focus, g)
     lp = [] if long is None else final_picks(long, g)
+    has_g = long is not None and "guide" in long.columns
+    ng = int(long["guide"].sum()) if has_g else 0
     groups = [
         ("short", "3か月保有", sp, focus,
          [("対象", f"{len(today):,}銘柄"), ("ランキング60位以内 × 巻き添え安", f"{0 if focus is None else len(focus)}銘柄"),
@@ -281,9 +298,12 @@ def _hero(focus, long, today, g, nm, sec, rank, market, stop_loss, d, check_rank
          SHORT_NOTE, "今日は「ランキング60位以内 かつ 巻き添え安の条件」を満たす銘柄がありません。"),
         ("long", "長期保有(1年以上)", lp, long,
          [("対象", f"{len(today):,}銘柄"), ("清原式(ネットキャッシュ比率1以上・黒字)", f"{0 if long is None else len(long)}銘柄"),
+          *([("会社予想が増益(10%以上、または増益に転換)", f"{ng}銘柄")] if has_g else []),
           ("期待スコア順 + Claude の調査で C・悪材料を除外、A を優先", f"{len(lp)}銘柄")],
-         [("1年後、全銘柄平均との差", "+12.5%"), ("2年後", "+38%"), ("上がっていた割合(1年)", "78%"), ("平均を上回った年", "7年中6年")],
-         LONG_NOTE, "今日は清原式の条件を満たす銘柄がありません。"),
+         ([("1年後、全銘柄平均との差", "+16.8%"), ("会社予想を使わない場合", "+9.6%"), ("2年後", "+39%"), ("会社予想なしを上回った年", "7年中7年")]
+          if has_g else
+          [("1年後、全銘柄平均との差", "+12.5%"), ("2年後", "+38%"), ("上がっていた割合(1年)", "78%"), ("平均を上回った年", "7年中6年")]),
+         LONG_NOTE_G if has_g else LONG_NOTE, "今日は清原式の条件を満たす銘柄がありません。"),
     ]
     sw = "".join(f"<button data-g='{k}'{' class=on' if j == 0 else ''}>{t}<span>{len(p)}</span></button>" for j, (k, t, p, *_rest) in enumerate(groups))
     secs = []
@@ -420,6 +440,11 @@ def write_report(today: pd.DataFrame, top: pd.DataFrame, dropped: list, w, bundl
         return [] if df is None else [{"code": c, "rank": rank[c], "name": str(nm(c)), "sector": str(sec(c)), "price": round(float(r["price"]), 2),
                                        "ret1m_pct": round(float(r["RET1M"]), 1)} for c, r in df.iterrows()]
     cands, long_cands = cl(focus), cl(None if long is None else long.head(15))
+    if long is not None and "fc_g" in long.columns:   # 長期の候補に会社予想(営業利益の前期比)を付ける
+        for x in long_cands:
+            v = long.loc[x["code"], "fc_g"]
+            x["guide_op_pct"] = None if pd.isna(v) else round(float(v) * 100, 1)
+            x["guide_up"] = bool(long.loc[x["code"], "guide"])
     cat_cands = [] if cat is None else [{**x, "flags": str(cat.loc[x["code"], "flags"]), "kiyohara": bool(cat.loc[x["code"], "kiyoshi"])}
                                         for x in cl(cat.head(15))]
     tab_btn = f"<button class='tab' data-t='bakuhane'>ランキング(上位{len(top)})</button>" + "".join(

@@ -12,6 +12,7 @@ import logging
 import os
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 
@@ -19,7 +20,7 @@ from .config import ROOT
 
 log = logging.getLogger("jpstocks")
 BASE = "https://api.jquants.com"
-JQ = ROOT.parent / "data" / "jquants"
+JQ = Path(os.environ.get("JQUANTS_DIR") or ROOT.parent / "data" / "jquants")   # GitHub Actions では JQUANTS_DIR で指定
 KEY_FILES = [ROOT.parent / "config" / "jquants_key.txt", ROOT / "config" / "jquants_key.txt"]
 
 
@@ -94,6 +95,8 @@ def fetch_by_date(kind: str, start: date, end: date, key: str, sleep: float = 0.
     return n
 
 
-def load(kind: str, cols: list[str] | None = None) -> pd.DataFrame:
+def load(kind: str, cols: list[str] | None = None, since: date | None = None) -> pd.DataFrame:
     files = sorted((JQ / kind).glob("*.parquet"))
+    if since is not None:
+        files = [f for f in files if f.stem >= since.isoformat()]
     return pd.concat([pd.read_parquet(f, columns=cols) for f in files], ignore_index=True) if files else pd.DataFrame()

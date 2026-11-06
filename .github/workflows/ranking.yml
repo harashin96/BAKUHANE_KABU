@@ -32,6 +32,8 @@ jobs:
       JP_DATA_START: "2015-01-01"
       JP_PUBLISH_DIR: ""
       EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+      JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}   # 決算短信の会社予想(無ければ長期の最終候補は期待スコア順のまま)
+      JQUANTS_DIR: ${{ github.workspace }}/jquants_cache
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +51,13 @@ jobs:
           path: data/prices.parquet
           key: prices-${{ github.run_id }}
           restore-keys: prices-
+
+      - name: 決算短信のデータを復元(前回の実行分。J-Quants のデータは公開しないのでリポジトリには入れない)
+        uses: actions/cache/restore@v4
+        with:
+          path: jquants_cache
+          key: jquants-${{ github.run_id }}
+          restore-keys: jquants-
 
       - name: 予測モデルを学習し直すか判定
         id: train
@@ -76,6 +85,13 @@ jobs:
         with:
           path: data/prices.parquet
           key: prices-${{ github.run_id }}
+
+      - name: 決算短信のデータを保存(次回用)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: jquants_cache
+          key: jquants-${{ github.run_id }}
 
       - name: 更新したデータをリポジトリに保存
         if: always()

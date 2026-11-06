@@ -72,11 +72,14 @@ def grade_cell(g: pd.DataFrame, code: str) -> str:
 
 
 def final_picks(focus: pd.DataFrame, g: pd.DataFrame, n: int = 5) -> list:
-    """候補から最終候補を選ぶ: C と「個別の悪材料」は外し、A を先に、残りは期待スコア順"""
+    """候補から最終候補を選ぶ: C と「個別の悪材料」は外し、A を先に、残りは候補の並び順(期待スコア順)。
+    候補に tier 列(長期: 会社予想が増益なら0)があれば、tier を A より優先する"""
     def ok(c):
         return c not in g.index or (g.loc[c, "grade"] != "C" and g.loc[c].get("drop") != "個別の悪材料")
     cs = [c for c in focus.index if ok(c)]
-    return sorted(cs, key=lambda c: (0 if c in g.index and g.loc[c, "grade"] == "A" else 1, list(focus.index).index(c)))[:n]
+    order = {c: i for i, c in enumerate(focus.index)}
+    tier = focus["tier"] if "tier" in focus.columns else pd.Series(0, index=focus.index)
+    return sorted(cs, key=lambda c: (tier[c], 0 if c in g.index and g.loc[c, "grade"] == "A" else 1, order[c]))[:n]
 
 
 SHORT_NOTE = ("<b>選び方</b>: ①ランキング(期待スコア)60位以内 ②巻き添え安の条件(黒字・割安度が上位30%・直近1か月で市場以上に下落など) "
@@ -87,6 +90,13 @@ LONG_NOTE = ("<b>選び方</b>: ①清原式(ネットキャッシュ比率1以�
              "①②の検証(2019〜2025年、5銘柄): 全銘柄平均より 1年後 <b>+12.5%</b>(上がっていた割合 78%、7年中6年で上回る)、2年後 <b>+38%</b>。"
              "途中で-50%以下まで下げたのは0.7%。<b>1年以上の保有</b>が前提。検証期間は割安株・PBR改善の追い風が強かった時期なので、同じ成績が続くとは限りません。")
 
+LONG_NOTE_G = ("<b>選び方</b>: ①清原式(ネットキャッシュ比率1以上の黒字企業) ②決算短信の会社予想が増益(今期の営業利益の予想が前期より10%以上多い、"
+               "または前期の減益から増益予想に転換)の銘柄を先に、期待スコアの高い順。足りなければ残りの清原式から補う "
+               "③ Claude の評価で C と「個別の悪材料」を外し、A を優先。"
+               "①②の検証(2019〜2025年、5銘柄、上場廃止した銘柄を含み配当は含まない): 全銘柄平均より 1年後 <b>+16.8%</b>"
+               "(会社予想を使わない場合 +9.6%。7年すべてで上回る)、2年後 <b>+39%</b>。"
+               "ただし会社予想を使わない場合との差は偶然の可能性を消しきれず(t 1.4)、条件も結果を見て決めたものなので、2026年11月以降の答え合わせで確かめます。"
+               "<b>1年以上の保有</b>が前提。検証期間は割安株・PBR改善の追い風が強かった時期なので、同じ成績が続くとは限りません。")
 
 def _picks_block(title, focus, g, nm, rank_of, note, empty, label, gr, dr) -> list:
     out = [f"<h2>{title}</h2>"]
@@ -107,16 +117,32 @@ def _picks_block(title, focus, g, nm, rank_of, note, empty, label, gr, dr) -> li
 
 def candidates_table(focus: pd.DataFrame, g: pd.DataFrame, nm, rank_of, picked=()) -> str:
     """最終候補の元になった候補の一覧(最終候補に選ばれた行は色付き)"""
+    has_g = "fc_g" in focus.columns
     def gr(c):
         return grade_cell(g, c)
     def dr(c):
         return html.escape(str(g.loc[c].get("drop", ""))) if c in g.index and pd.notna(g.loc[c].get("drop")) else "未調査"
     crow = "".join(f"<tr class='{'new' if c in picked else ''}'><td>{rank_of(c)}</td><td>{c}</td><td class='name'>{html.escape(str(nm(c)))}</td>{gr(c)}<td>{dr(c)}</td>"
                    f"<td class='num'>{r['score']*100:.0f}</td><td class='num'>{r['RET1M']:+.0f}%</td><td class='num'>{_f(r['PER'])}</td>"
-                   f"<td class='num'>{_f(r['NCR'], '{:.2f}')}</td><td>{'最終候補' if c in picked else ''}</td></tr>"
+                   f"<td class='num'>{_f(r['NCR'], '{:.2f}')}</td>{guide_td(r) if has_g else ''}<td>{'最終候補' if c in picked else ''}</td></tr>"
                    for c, r in focus.iterrows())
     return ("<div class='wrap'><table><tr><th>順位</th><th>コード</th><th>銘柄</th><th>Claude</th><th>下げた理由</th><th>期待スコア</th>"
-            "<th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th><th>結果</th></tr>" + crow + "</table></div>")
+            "<th>1か月</th><th>PER</th><th>ネットキャッシュ比率</th>" + ("<th>会社予想(営業利益)</th>" if has_g else "")
+            + "<th>結果</th></tr>" + crow + "</table></div>")
+
+
+def guide_text(r) -> str:
+    """会社予想の短い説明: 「+15%(増益予想)」など。予想が無ければ「−」"""
+    v = r.get("fc_g") if hasattr(r, "get") else None
+    if v is None or pd.isna(v):
+        return "−"
+    tag = "増益予想に転換" if r.get("guide_turn") == 1 and r.get("guide_up") != 1 else ("増益予想" if r.get("guide_up") == 1 else ("増益予想に転換" if r.get("guide_turn") == 1 else ""))
+    return f"前期比 {v*100:+.0f}%" + (f"({tag})" if tag else "")
+
+
+def guide_td(r) -> str:
+    cls = " class='num up'" if bool(r.get("guide", False)) else " class='num'"
+    return f"<td{cls}>{html.escape(guide_text(r))}</td>"
 
 
 def research_html(top: pd.DataFrame, g: pd.DataFrame, check: pd.DataFrame | None, nm, focus: pd.DataFrame | None = None,

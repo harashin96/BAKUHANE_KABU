@@ -107,9 +107,22 @@ try:
 except Exception as e:
     log.warning(f"割安カタリストを作れませんでした: {e}")
     cat = None
+guide = None   # 決算短信の会社予想(J-Quants。APIキーが無いときは使わない)
+try:
+    from jpstocks import jquants as J
+    from jpstocks import kessan as K
+    g_since = date.today() - timedelta(days=K.GUIDE_DAYS)
+    if not a.no_update:
+        n = J.fetch_by_date("fins", g_since, date.today(), J.api_key(), sleep=1.1)   # ライトプランは1分60回まで
+        log.info(f"決算短信(J-Quants): {n} 日分を取得")
+    guide = K.latest_guide(J.load("fins", since=g_since), today["date"].iloc[0], today.index)
+    log.info(f"会社予想が増益: {int(guide['guide'].eq(True).sum())} 銘柄 / 予想あり {int(guide['fc_g'].notna().sum())}")
+except Exception as e:
+    log.warning(f"決算短信の会社予想を使えませんでした(長期の最終候補は期待スコア順のまま): {e}")
+    guide = None
 path = write_report(today, top, dropped, w, bundle, track_record(hist, w), budget, stop, rc.get("publish_dir") or "",
                     market=status, dips=dip_candidates(today, status), focus=focus_candidates(today, status),
-                    long=kiyohara_candidates(today), cat=cat)
+                    long=kiyohara_candidates(today, guide), cat=cat)
 log.info(f"完了 ({time.time()-t0:.0f}秒): {path}")
 print(top[["p_jump", "p_crash", "price", "days_in"]].head(10).round(3).to_string())
 if not a.no_open:

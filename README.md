@@ -8,11 +8,15 @@
 - データ: 株価 yfinance(リポジトリには保存しない)、財務 EDINET API(提出日以降のみ使用)
 - 割安カタリスト(参考タブ): 清原式・割安総合の銘柄のうち、業績回復(減益→増益など)か、割安が見直されるきっかけ(アクティビスト・新規5%超保有・親子上場・オーナー企業・自社株買い・増配)がある銘柄。
   データは EDINET の大量保有報告書・自己株券買付状況報告書・公開買付届出書・有価証券報告書の大株主の状況(`jpstocks/catalyst.py`、初回の取得は `scripts/06_fetch_catalyst.py`)。アクティビストの一覧は `config/activists.yaml`(編集可)
+- 長期の最終候補: 清原式のうち、決算短信の会社予想が増益(今期の営業利益の予想が前期より10%以上多い、または増益予想に転換)の銘柄を先に、期待スコア順(2026-11 から)。
+  決算短信は J-Quants API(`/v2/fins/summary`、ライトプラン以上)から毎日取得。データは公開しないので、GitHub Actions のキャッシュに置く(`jpstocks/kessan.py`)。
+  APIキーが無いときは、会社予想を使わずに期待スコア順で選ぶ
 - 検証(2019〜2026年、walk-forward): 毎日の上位5銘柄の3か月リターンは全銘柄平均より +2.6%、上がっていた割合 58%、-30%以下 3%。投資判断はご自身で。
 
 ## 最初の設定(1回だけ)
 1. Settings → Secrets and variables → Actions → New repository secret
    - Name: `EDINET_API_KEY` / Secret: EDINETのAPIキー
+   - Name: `JQUANTS_API_KEY` / Secret: J-Quants のAPIキー(長期の最終候補で会社予想を使う場合。初回は約3年分の決算短信の取得に20分ほど)
 2. Settings → Pages → Build and deployment → Source を **GitHub Actions** にする
 3. Actions タブ → 「爆ハネランキング」→ **Run workflow**(初回は予測モデルの学習も行うので 20〜40分)
 

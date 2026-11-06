@@ -284,9 +284,20 @@ def focus_candidates(today: pd.DataFrame, status: dict, top: int = 60) -> pd.Dat
     return t[_dip_mask(t, status)]
 
 
-def kiyohara_candidates(today: pd.DataFrame) -> pd.DataFrame:
+def kiyohara_candidates(today: pd.DataFrame, guide: pd.DataFrame | None = None) -> pd.DataFrame:
     """長期保有の候補 = 清原式(ネットキャッシュ比率1以上の黒字企業)を期待スコアの高い順に
 
     walk-forward 検証(2019〜2025年、上位5銘柄): 全銘柄平均より 3か月 +3.5% / 1年 +12.5%(t=2.5、上がっていた割合78%) / 2年 +38%。
     割安度の順で上位5銘柄にすると 1年 +7.7%(t=1.3)。巻き添え安の条件を重ねると悪くなる(1年 +8.5%)。"""
-    return today[(today["NCR"] >= 1) & (today["PER"] > 0)]
+    k = today[(today["NCR"] >= 1) & (today["PER"] > 0)].copy()
+    if guide is not None and len(guide):
+        # 決算短信の会社予想が増益(10%以上 または 増益予想に転換)の銘柄を先に。足りない分は残りの清原式から期待スコア順
+        # 検証(2019〜2025年、上場廃止を含む・配当なし): 1年後 全銘柄平均より +16.8%(会社予想を使わない場合 +9.6%、7年中7年で上回る)
+        g = guide.reindex(k.index.astype(str))
+        g.index = k.index
+        for c in ["fc_g", "guide_up", "guide_turn", "disc"]:
+            k[c] = g[c]
+        k["guide"] = g["guide"].eq(True)
+        k["tier"] = np.where(k["guide"], 0, 1)
+        k = k.sort_values(["tier", "score"], ascending=[True, False], kind="stable")
+    return k
