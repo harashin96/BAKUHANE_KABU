@@ -86,7 +86,23 @@ def earnings_panels(raw: pd.DataFrame, dates: pd.DatetimeIndex, codes) -> dict[s
     return out
 
 
-GUIDE_DAYS = 1200   # 毎日の候補で使う決算短信の期間(前期・前々期の実績を引くため約3年分)
+MODEL_EARN = ["fc_g", "guide_up", "guide_turn", "rev_up", "rev_down", "q_yoy", "q_turn", "disc_age"]   # モデルに入れる決算短信の特徴量
+
+
+def model_panels(raw: pd.DataFrame, dates: pd.DatetimeIndex, codes) -> dict[str, pd.DataFrame]:
+    """期待スコアのモデル(チャレンジャー)に入れる決算短信の特徴量(日付 × 銘柄)。検証: research/experiments/2026-11-07.md の M1
+    earnings_panels に、下方修正(rev_down、60営業日)と最後の決算短信からの日数(disc_age、暦日)を足したもの"""
+    E = earnings_panels(raw, dates, codes)
+    f = disclosure_features(tidy_fins(raw))
+    f["rev_down"] = ((f["fc"] <= f["prev_fc"] * 0.95) & (f["prev_fc"] > 0)).astype(float)
+    E["rev_down"] = _daily(f[f["rev_down"] == 1].assign(v=1.0), "v", dates, codes, 60).fillna(0)
+    st = f[f["stmt"]].assign(dn=lambda x: x["date"].map(pd.Timestamp.toordinal).astype(float))
+    last = _daily(st, "dn", dates, codes, 130)
+    E["disc_age"] = pd.DataFrame(np.asarray([d.toordinal() for d in dates], float)[:, None] - last.to_numpy(), index=dates, columns=codes)
+    return E
+
+
+GUIDE_DAYS = 1200  # 毎日の候補で使う決算短信の期間(前期・前々期の実績を引くため約3年分)
 
 
 def latest_guide(raw: pd.DataFrame, asof, codes) -> pd.DataFrame:

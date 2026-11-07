@@ -12,6 +12,9 @@
 - 長期の最終候補: 清原式のうち、決算短信の会社予想が増益(今期の営業利益の予想が前期より10%以上多い、または増益予想に転換)の銘柄を先に、期待スコア順(2026-11 から)。
   決算短信は J-Quants API(`/v2/fins/summary`、ライトプラン以上)から毎日取得。データは公開しないので、GitHub Actions のキャッシュに置く(`jpstocks/kessan.py`)。
   APIキーが無いときは、会社予想を使わずに期待スコア順で選ぶ
+- モデルの進化: 毎週土曜、このPCの Claude Code が改善の案を1つ検証し(`research/improve_prompt.md`)、モデルの案は検証台 `research/lab/lab.py` で採点して `research/lab/leaderboard.csv` に並べる。
+  良い案はチャレンジャー(`jpstocks/challenger.py`、`models/challengers/`)として毎日本番と並走させ、選んだ銘柄を `reports/shadow_picks.csv` に記録(サイトの表示は変えない)。
+  答え合わせは `scripts/25_shadow_eval.py` → `research/lab/shadow.md`。過去の検証と並走の両方で条件を満たしたら報告し、本番への切り替えは利用者が決める(`research/lab/README.md`)
 - 検証(2019〜2026年、walk-forward): 毎日の上位5銘柄の3か月リターンは全銘柄平均より +2.6%、上がっていた割合 58%、-30%以下 3%。投資判断はご自身で。
 
 ## 最初の設定(1回だけ)
